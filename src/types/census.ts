@@ -53,10 +53,10 @@ export const PATIENT_CATEGORIES = [
     shortLabel: 'ประเภท 1 · อาการน้อยสุด',
     description: 'อาการน้อยสุด ช่วยเหลือตนเองได้ดี รอจำหน่ายหรือสังเกตอาการทั่วไป (Self Care)',
     nursingHours: 1.5,
-    colorHex: '#10b981', // emerald-500
-    dotClass: 'bg-emerald-500',
-    textClass: 'text-emerald-700',
-    bedClass: 'bg-emerald-600 text-white border-emerald-700',
+    colorHex: '#1caf83',
+    dotClass: 'bg-[#1caf83]',
+    textClass: 'text-emerald-800',
+    bedClass: 'bg-[#1caf83] text-white border-emerald-700',
   },
   {
     key: 'cat2' as const,
@@ -64,10 +64,10 @@ export const PATIENT_CATEGORIES = [
     shortLabel: 'ประเภท 2 · อาการน้อย',
     description: 'อาการน้อย ช่วยเหลือตนเองได้เป็นส่วนใหญ่ ต้องการการดูแลพึ่งพาเล็กน้อย (Minimal Care)',
     nursingHours: 2.5,
-    colorHex: '#0284c7', // sky-600
-    dotClass: 'bg-sky-600',
-    textClass: 'text-sky-700',
-    bedClass: 'bg-sky-600 text-white border-sky-700',
+    colorHex: '#16a7b8',
+    dotClass: 'bg-[#16a7b8]',
+    textClass: 'text-cyan-800',
+    bedClass: 'bg-[#16a7b8] text-white border-cyan-700',
   },
   {
     key: 'cat3' as const,
@@ -75,10 +75,10 @@ export const PATIENT_CATEGORIES = [
     shortLabel: 'ประเภท 3 · ปานกลาง',
     description: 'อาการปานกลาง ต้องการการรักษาพยาบาลและการช่วยเหลือปานกลาง (Intermediate Care)',
     nursingHours: 3.5,
-    colorHex: '#0d9488', // teal-600
-    dotClass: 'bg-teal-600',
-    textClass: 'text-teal-700',
-    bedClass: 'bg-teal-600 text-white border-teal-700',
+    colorHex: '#3578c6',
+    dotClass: 'bg-[#3578c6]',
+    textClass: 'text-blue-800',
+    bedClass: 'bg-[#3578c6] text-white border-blue-700',
   },
   {
     key: 'cat4' as const,
@@ -86,10 +86,10 @@ export const PATIENT_CATEGORIES = [
     shortLabel: 'ประเภท 4 · กึ่งวิกฤต',
     description: 'อาการค่อนข้างหนัก ต้องเฝ้าระวังสัญญาณชีพและพึ่งพาทางการพยาบาลสูง (Semi-Critical)',
     nursingHours: 5.5,
-    colorHex: '#f59e0b', // amber-500
-    dotClass: 'bg-amber-500',
-    textClass: 'text-amber-700',
-    bedClass: 'bg-amber-500 text-white border-amber-600',
+    colorHex: '#e1a22b',
+    dotClass: 'bg-[#e1a22b]',
+    textClass: 'text-amber-800',
+    bedClass: 'bg-[#e1a22b] text-white border-amber-700',
   },
   {
     key: 'cat5' as const,
@@ -97,10 +97,10 @@ export const PATIENT_CATEGORIES = [
     shortLabel: 'ประเภท 5 · วิกฤต',
     description: 'ผู้ป่วยวิกฤต ต้องการการดูแลเฝ้าระวังใกล้ชิดตลอด 24 ชม. (Critical / Intensive Care)',
     nursingHours: 7.5,
-    colorHex: '#dc2626', // red-600
-    dotClass: 'bg-red-600',
-    textClass: 'text-red-700',
-    bedClass: 'bg-red-600 text-white border-red-700',
+    colorHex: '#cf4f57',
+    dotClass: 'bg-[#cf4f57]',
+    textClass: 'text-red-800',
+    bedClass: 'bg-[#cf4f57] text-white border-red-700',
   },
 ];
 

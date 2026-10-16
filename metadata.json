@@ -1,6 +1,0 @@
-{
-  "name": "รายงานยอดผู้ป่วย - ตึกผู้ป่วยใน โรงพยาบาลองครักษ์",
-  "description": "ระบบรายงานและบริหารจัดการยอดผู้ป่วยใน (Inpatient Census Management) ตึกผู้ป่วยใน โรงพยาบาลองครักษ์ รองรับการบันทึกเวรเช้า-บ่าย-ดึก การจำแนกประเภทผู้ป่วย 1-5 และเชื่อมต่อ Google Sheets",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

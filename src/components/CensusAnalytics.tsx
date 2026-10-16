@@ -1,492 +1,425 @@
-import React, { useMemo, useState } from 'react';
+"use client";
+
+import React, { useMemo, useState } from "react";
 import {
-  CensusRecord,
-  PATIENT_CATEGORIES,
-  SHIFT_META,
-  ShiftType,
-} from '../types/census';
+  Activity,
+  ArrowUpFromLine,
+  BedDouble,
+  Clock3,
+  TrendingUp,
+} from "lucide-react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./ui/empty";
+import { CensusRecord, SHIFT_META, ShiftType } from "../types/census";
 import {
   calculateNursingWorkloadHours,
   calculateOccupancyRate,
   formatThaiDate,
   sortRecordsAsc,
-} from '../utils/censusUtils';
-import { PatientCategoryDonutChart } from './PatientCategoryDonutChart';
+} from "../utils/censusUtils";
+import { PatientCategoryDonutChart } from "./PatientCategoryDonutChart";
 
 interface CensusAnalyticsProps {
   records: CensusRecord[];
   onSelectRecord?: (record: CensusRecord) => void;
 }
+const shifts: ShiftType[] = ["ดึก", "เช้า", "บ่าย"];
 
 export const CensusAnalytics: React.FC<CensusAnalyticsProps> = ({
   records,
   onSelectRecord,
 }) => {
-  const [rangeLimit, setRangeLimit] = useState<number>(15);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-
+  const [range, setRange] = useState(15);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const chronological = useMemo(() => {
-    const asc = sortRecordsAsc(records);
-    return asc.slice(Math.max(0, asc.length - rangeLimit));
-  }, [records, rangeLimit]);
-
-  const summaryStats = useMemo(() => {
-    if (records.length === 0) {
+    const sorted = sortRecordsAsc(records);
+    return sorted.slice(Math.max(0, sorted.length - range));
+  }, [range, records]);
+  const summary = useMemo(() => {
+    const emptyByShift = () => ({
+      count: 0,
+      totalPatients: 0,
+      admits: 0,
+      discharges: 0,
+      referrals: 0,
+    });
+    const byShift: Record<ShiftType, ReturnType<typeof emptyByShift>> = {
+      ดึก: emptyByShift(),
+      เช้า: emptyByShift(),
+      บ่าย: emptyByShift(),
+    };
+    const categories = { cat1: 0, cat2: 0, cat3: 0, cat4: 0, cat5: 0 };
+    if (!records.length)
       return {
         avgOccupancy: 0,
         avgPatients: 0,
         peakPatients: 0,
-        totalAdmits: 0,
-        totalDischarges: 0,
-        totalReferrals: 0,
-        avgWorkloadHours: 0,
-        catTotals: { cat1: 0, cat2: 0, cat3: 0, cat4: 0, cat5: 0, all: 0 },
-        byShift: {
-          'ดึก': { count: 0, admits: 0, discharges: 0, referrals: 0, avgPatients: 0 },
-          'เช้า': { count: 0, admits: 0, discharges: 0, referrals: 0, avgPatients: 0 },
-          'บ่าย': { count: 0, admits: 0, discharges: 0, referrals: 0, avgPatients: 0 },
-        },
+        workload: 0,
+        admits: 0,
+        discharges: 0,
+        referrals: 0,
+        categories,
+        byShift,
       };
-    }
-
-    let sumOccupancy = 0;
-    let sumPatients = 0;
-    let peakPatients = 0;
-    let totalAdmits = 0;
-    let totalDischarges = 0;
-    let totalReferrals = 0;
-    let sumWorkload = 0;
-
-    const catTotals = { cat1: 0, cat2: 0, cat3: 0, cat4: 0, cat5: 0, all: 0 };
-    const byShift: Record<
-      ShiftType,
-      { count: number; admits: number; discharges: number; referrals: number; sumPatients: number; avgPatients: number }
-    > = {
-      'ดึก': { count: 0, admits: 0, discharges: 0, referrals: 0, sumPatients: 0, avgPatients: 0 },
-      'เช้า': { count: 0, admits: 0, discharges: 0, referrals: 0, sumPatients: 0, avgPatients: 0 },
-      'บ่าย': { count: 0, admits: 0, discharges: 0, referrals: 0, sumPatients: 0, avgPatients: 0 },
-    };
-
-    for (const r of records) {
-      sumOccupancy += calculateOccupancyRate(r.totalPatients, r.capacity);
-      sumPatients += r.totalPatients;
-      if (r.totalPatients > peakPatients) peakPatients = r.totalPatients;
-      totalAdmits += r.newPatients;
-      totalDischarges += r.discharges;
-      totalReferrals += r.referrals;
-      sumWorkload += calculateNursingWorkloadHours(r);
-
-      catTotals.cat1 += r.cat1;
-      catTotals.cat2 += r.cat2;
-      catTotals.cat3 += r.cat3;
-      catTotals.cat4 += r.cat4;
-      catTotals.cat5 += r.cat5;
-      catTotals.all += r.cat1 + r.cat2 + r.cat3 + r.cat4 + r.cat5;
-
-      const s = byShift[r.shift] || byShift['เช้า'];
-      s.count += 1;
-      s.admits += r.newPatients;
-      s.discharges += r.discharges;
-      s.referrals += r.referrals;
-      s.sumPatients += r.totalPatients;
-    }
-
-    (['ดึก', 'เช้า', 'บ่าย'] as ShiftType[]).forEach((sh) => {
-      const item = byShift[sh];
-      item.avgPatients = item.count > 0 ? Math.round((item.sumPatients / item.count) * 10) / 10 : 0;
+    let occupancy = 0;
+    let patientTotal = 0;
+    let peak = 0;
+    let workload = 0;
+    let admits = 0;
+    let discharges = 0;
+    let referrals = 0;
+    records.forEach((record) => {
+      occupancy += calculateOccupancyRate(
+        record.totalPatients,
+        record.capacity,
+      );
+      patientTotal += record.totalPatients;
+      peak = Math.max(peak, record.totalPatients);
+      workload += calculateNursingWorkloadHours(record);
+      admits += record.newPatients;
+      discharges += record.discharges;
+      referrals += record.referrals;
+      categories.cat1 += record.cat1;
+      categories.cat2 += record.cat2;
+      categories.cat3 += record.cat3;
+      categories.cat4 += record.cat4;
+      categories.cat5 += record.cat5;
+      const item = byShift[record.shift];
+      item.count += 1;
+      item.totalPatients += record.totalPatients;
+      item.admits += record.newPatients;
+      item.discharges += record.discharges;
+      item.referrals += record.referrals;
     });
-
     return {
-      avgOccupancy: Math.round((sumOccupancy / records.length) * 10) / 10,
-      avgPatients: Math.round((sumPatients / records.length) * 10) / 10,
-      peakPatients,
-      totalAdmits,
-      totalDischarges,
-      totalReferrals,
-      avgWorkloadHours: Math.round((sumWorkload / records.length) * 10) / 10,
-      catTotals,
+      avgOccupancy: occupancy / records.length,
+      avgPatients: patientTotal / records.length,
+      peakPatients: peak,
+      workload: workload / records.length,
+      admits,
+      discharges,
+      referrals,
+      categories,
       byShift,
     };
   }, [records]);
-
   const activePoint =
-    hoveredIndex !== null && chronological[hoveredIndex]
-      ? chronological[hoveredIndex]
-      : chronological[chronological.length - 1] || null;
-
-  // SVG Chart dimensions
-  const chartWidth = 840;
-  const chartHeight = 240;
-  const padLeft = 42;
-  const padRight = 24;
-  const padTop = 24;
-  const padBottom = 38;
-  const innerW = chartWidth - padLeft - padRight;
-  const innerH = chartHeight - padTop - padBottom;
-
-  const maxY = useMemo(() => {
-    let m = 35;
-    for (const r of chronological) {
-      if (r.totalPatients > m) m = r.totalPatients + 4;
-      if (r.capacity > m) m = r.capacity + 4;
-    }
-    return m;
+    hoverIndex !== null
+      ? chronological[hoverIndex] || chronological.at(-1) || null
+      : chronological.at(-1) || null;
+  const chart = useMemo(() => {
+    const width = 900;
+    const height = 280;
+    const left = 44;
+    const right = 22;
+    const top = 24;
+    const bottom = 42;
+    const innerWidth = width - left - right;
+    const innerHeight = height - top - bottom;
+    const max =
+      Math.max(
+        35,
+        ...chronological.map((record) =>
+          Math.max(record.totalPatients, record.capacity),
+        ),
+      ) + 4;
+    const x = (index: number) =>
+      chronological.length <= 1
+        ? left + innerWidth / 2
+        : left + (index / (chronological.length - 1)) * innerWidth;
+    const y = (value: number) =>
+      top +
+      innerHeight -
+      (Math.min(max, Math.max(0, value)) / max) * innerHeight;
+    const points = chronological.map((record, index) => ({
+      x: x(index),
+      y: y(record.totalPatients),
+      record,
+    }));
+    const path = points
+      .map(
+        (point, index) =>
+          `${index ? "L" : "M"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`,
+      )
+      .join(" ");
+    return {
+      width,
+      height,
+      left,
+      right,
+      top,
+      bottom,
+      innerHeight,
+      max,
+      x,
+      y,
+      points,
+      path,
+    };
   }, [chronological]);
-
-  const getX = (index: number) => {
-    if (chronological.length <= 1) return padLeft + innerW / 2;
-    return padLeft + (index / (chronological.length - 1)) * innerW;
-  };
-
-  const getY = (val: number) => {
-    return padTop + innerH - (Math.min(maxY, Math.max(0, val)) / maxY) * innerH;
-  };
-
-  const linePath = useMemo(() => {
-    if (chronological.length === 0) return '';
-    return chronological
-      .map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${getX(idx).toFixed(1)} ${getY(pt.totalPatients).toFixed(1)}`)
-      .join(' ');
-  }, [chronological, maxY]);
-
-  const areaPath = useMemo(() => {
-    if (chronological.length === 0) return '';
-    const firstX = getX(0).toFixed(1);
-    const lastX = getX(chronological.length - 1).toFixed(1);
-    const baseY = (padTop + innerH).toFixed(1);
-    return `${linePath} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
-  }, [linePath, chronological]);
-
-  const capacityY = getY(chronological[0]?.capacity || 30);
-
+  if (!records.length)
+    return (
+      <Empty className="rounded-xl border-border bg-card py-20">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-primary/10 text-primary">
+            <TrendingUp />
+          </EmptyMedia>
+          <EmptyTitle>ยังไม่มีข้อมูลสำหรับวิเคราะห์</EmptyTitle>
+          <EmptyDescription>
+            กราฟและสถิติจะเริ่มแสดงเมื่อมีรายการบันทึกยอดเวรจากฐานข้อมูล
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   return (
-    <div className="space-y-8">
-      {/* Top KPI Summary Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">อัตราการครองเตียงเฉลี่ย</div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono tabular-nums text-slate-900">
-              {summaryStats.avgOccupancy.toFixed(1)}%
-            </span>
-            <span className="text-xs text-slate-500 font-mono tabular-nums">
-              (เฉลี่ย {summaryStats.avgPatients} ราย/เวร)
-            </span>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            คำนวณจากทั้งหมด {records.length} เวรที่บันทึก
-          </div>
-        </div>
-
-        <div className="p-5 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">ยอดผู้ป่วยสูงสุด (Peak Census)</div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono tabular-nums text-slate-900">
-              {summaryStats.peakPatients}
-            </span>
-            <span className="text-xs text-slate-500">ราย</span>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            เทียบศักยภาพเตียงมาตรฐาน 30 เตียง
-          </div>
-        </div>
-
-        <div className="p-5 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">การเคลื่อนไหวสะสม (รับใหม่ / จำหน่าย / ส่งต่อ)</div>
-          <div className="mt-2 flex items-baseline gap-2 font-mono tabular-nums">
-            <span className="text-2xl font-bold text-teal-700">+{summaryStats.totalAdmits}</span>
-            <span className="text-slate-300">/</span>
-            <span className="text-xl font-semibold text-slate-800">-{summaryStats.totalDischarges}</span>
-            <span className="text-slate-300">/</span>
-            <span className="text-lg font-medium text-amber-700">ส่งต่อ {summaryStats.totalReferrals}</span>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            ยอดรวมทุกเวรในระบบ
-          </div>
-        </div>
-
-        <div className="p-5 bg-white border border-slate-200 rounded-lg">
-          <div className="text-xs text-slate-500">ภาระงานพยาบาลเฉลี่ยต่อเวร</div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono tabular-nums text-slate-900">
-              {summaryStats.avgWorkloadHours}
-            </span>
-            <span className="text-xs text-slate-500">ชม.การพยาบาล</span>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            คำนวณตามเกณฑ์ผู้ป่วยประเภท 1–5
-          </div>
-        </div>
+    <div className="flex min-w-0 flex-col gap-8">
+      <div className="grid grid-cols-2 divide-x divide-y border-y border-border bg-muted/40 xl:grid-cols-4 xl:divide-y-0">
+        <Metric
+          icon={<BedDouble />}
+          label="อัตราครองเตียงเฉลี่ย"
+          value={`${summary.avgOccupancy.toFixed(1)}%`}
+          detail={`${summary.avgPatients.toFixed(1)} ราย/เวร`}
+          tone="primary"
+        />
+        <Metric
+          icon={<Activity />}
+          label="ยอดผู้ป่วยสูงสุด"
+          value={`${summary.peakPatients}`}
+          detail="รายในเวรที่มีผู้ป่วยสูงสุด"
+          tone="secondary"
+        />
+        <Metric
+          icon={<Clock3 />}
+          label="ภาระงานเฉลี่ย"
+          value={`${summary.workload.toFixed(1)}`}
+          detail="ชม./วัน (เฉลี่ยจากเวรที่บันทึก)"
+          tone="accent"
+        />
+        <Metric
+          icon={<ArrowUpFromLine />}
+          label="การเคลื่อนไหวสะสม"
+          value={`+${summary.admits} / −${summary.discharges}`}
+          detail={`ส่งต่อ ${summary.referrals} ราย`}
+          tone="warning"
+        />
       </div>
-
-      {/* Section 1: Interactive Census Time-Series Chart */}
-      <div className="p-6 bg-white border border-slate-200 rounded-lg space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <section className="min-w-0 rounded-xl border border-border bg-card p-5 shadow-sm sm:p-7">
+        <div className="flex flex-col justify-between gap-4 border-b border-border pb-5 sm:flex-row sm:items-start">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              01. แนวโน้มยอดผู้ป่วยคงเหลือรายเวรเทียบศักยภาพเตียง (Bed Occupancy Trend)
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              แสดงการเปลี่ยนแปลงยอดผู้ป่วยคงเหลือ (เส้นทึบสีเขียวอมน้ำเงิน) เทียบจำนวนเตียงทั้งหมด 30 เตียง (เส้นประสีแดง)
+            <h2 className="text-xl font-semibold">
+              แนวโน้มผู้ป่วยคงเหลือเทียบศักยภาพเตียง
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              เลือกจุดบนกราฟเพื่อดูรายละเอียดของเวรนั้น
             </p>
           </div>
-
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200 self-start">
-            {[
-              { label: '9 เวรล่าสุด', value: 9 },
-              { label: '15 เวรล่าสุด', value: 15 },
-              { label: '30 เวรล่าสุด', value: 30 },
-            ].map((opt) => (
+          <div className="flex gap-1 rounded-md border border-border p-1">
+            {[9, 15, 30].map((value) => (
               <button
-                key={opt.value}
                 type="button"
-                onClick={() => setRangeLimit(opt.value)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  rangeLimit === opt.value
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                key={value}
+                onClick={() => setRange(value)}
+                className={`min-h-11 rounded px-3 text-xs font-medium ${range === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
               >
-                {opt.label}
+                {value} เวร
               </button>
             ))}
           </div>
         </div>
-
-        {/* Active Point Readout Strip */}
         {activePoint && (
-          <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-            <div className="flex items-center gap-2 text-slate-700">
-              <span className="font-semibold text-slate-900">
-                {formatThaiDate(activePoint.date, true)}
+          <div className="my-5 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent/35 p-4 text-sm">
+            <div>
+              <strong>{formatThaiDate(activePoint.date, true)}</strong>
+              <span className="mx-2 text-muted-foreground">·</span>
+              <span className="text-primary">
+                {SHIFT_META[activePoint.shift].label}
               </span>
-              <span aria-hidden="true">·</span>
-              <span className="font-medium text-teal-700">
-                {SHIFT_META[activePoint.shift]?.label}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="text-slate-500 truncate max-w-xs">{activePoint.note || 'ไม่มีหมายเหตุ'}</span>
             </div>
-            <div className="flex items-center gap-4 font-mono tabular-nums text-slate-700">
-              <span>
-                คงเหลือ: <strong className="text-slate-900">{activePoint.totalPatients}</strong>/{activePoint.capacity} เตียง ({calculateOccupancyRate(activePoint.totalPatients, activePoint.capacity)}%)
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>ว่าง: {activePoint.availableBeds}</span>
-              <span aria-hidden="true">·</span>
-              <span>รับใหม่: +{activePoint.newPatients}</span>
-              <span aria-hidden="true">·</span>
-              <span>จำหน่าย: -{activePoint.discharges}</span>
+            <div className="font-mono tabular-nums text-muted-foreground">
+              คงเหลือ{" "}
+              <strong className="text-foreground">
+                {activePoint.totalPatients}/{activePoint.capacity}
+              </strong>{" "}
+              · ว่าง {activePoint.availableBeds} · รับใหม่ +
+              {activePoint.newPatients} · จำหน่าย −{activePoint.discharges}
             </div>
           </div>
         )}
-
-        {/* SVG Chart */}
-        {chronological.length === 0 ? (
-          <div className="h-56 flex items-center justify-center text-sm text-slate-500">
-            ไม่มีข้อมูลสำหรับแสดงกราฟแนวโน้ม
-          </div>
-        ) : (
-          <div className="w-full overflow-x-auto">
-            <svg
-              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-              className="w-full min-w-[640px] h-auto select-none"
-            >
-              <defs>
-                <linearGradient id="censusAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0d9488" stopOpacity="0.22" />
-                  <stop offset="100%" stopColor="#0d9488" stopOpacity="0.01" />
-                </linearGradient>
-              </defs>
-
-              {/* Horizontal Grid Lines */}
-              {[0, 10, 20, 30].map((tick) => {
-                const y = getY(tick);
-                return (
-                  <g key={tick}>
-                    <line
-                      x1={padLeft}
-                      y1={y}
-                      x2={chartWidth - padRight}
-                      y2={y}
-                      stroke="#e2e8f0"
-                      strokeDasharray="3 3"
-                    />
-                    <text
-                      x={padLeft - 8}
-                      y={y + 4}
-                      textAnchor="end"
-                      className="text-[11px] fill-slate-400 font-mono"
-                    >
-                      {tick}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Capacity Threshold Line (30 Beds) */}
-              <line
-                x1={padLeft}
-                y1={capacityY}
-                x2={chartWidth - padRight}
-                y2={capacityY}
-                stroke="#dc2626"
-                strokeWidth="1.25"
-                strokeDasharray="5 4"
-              />
-              <text
-                x={chartWidth - padRight - 4}
-                y={capacityY - 6}
-                textAnchor="end"
-                className="text-[10px] fill-red-600 font-mono"
-              >
-                ศักยภาพเตียงสูงสุด ({chronological[0]?.capacity || 30} เตียง)
-              </text>
-
-              {/* Area & Line */}
-              <path d={areaPath} fill="url(#censusAreaGrad)" />
-              <path
-                d={linePath}
-                fill="none"
-                stroke="#0d9488"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-
-              {/* Data Points */}
-              {chronological.map((pt, idx) => {
-                const cx = getX(idx);
-                const cy = getY(pt.totalPatients);
-                const isHovered = hoveredIndex === idx;
-                return (
-                  <g
-                    key={pt.id}
-                    className="cursor-pointer"
-                    onMouseEnter={() => setHoveredIndex(idx)}
-                    onClick={() => onSelectRecord && onSelectRecord(pt)}
+        <div className="overflow-x-auto">
+          <svg
+            viewBox={`0 0 ${chart.width} ${chart.height}`}
+            className="h-auto w-full"
+            role="img"
+            aria-label="กราฟแนวโน้มผู้ป่วยคงเหลือเทียบศักยภาพเตียง"
+          >
+            <line
+              x1={chart.left}
+              x2={chart.width - chart.right}
+              y1={chart.y(activePoint?.capacity || 30)}
+              y2={chart.y(activePoint?.capacity || 30)}
+              stroke="var(--muted-foreground)"
+              opacity="0.5"
+              strokeDasharray="6 6"
+            />
+            <path
+              d={`${chart.path} L ${chart.points.at(-1)?.x || chart.left} ${chart.height - chart.bottom} L ${chart.points[0]?.x || chart.left} ${chart.height - chart.bottom} Z`}
+              fill="var(--primary)"
+              opacity="0.12"
+            />
+            <path
+              d={chart.path}
+              fill="none"
+              stroke="var(--primary)"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {chart.points.map((point, index) => (
+              <g key={point.record.id}>
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r="22"
+                  fill="transparent"
+                  stroke="transparent"
+                  className="cursor-pointer focus-visible:stroke-ring"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={
+                    formatThaiDate(point.record.date) +
+                    " " +
+                    point.record.shift +
+                    " ผู้ป่วย " +
+                    point.record.totalPatients +
+                    " ราย"
+                  }
+                  onMouseEnter={() => setHoverIndex(index)}
+                  onMouseLeave={() => setHoverIndex(null)}
+                  onFocus={() => setHoverIndex(index)}
+                  onBlur={() => setHoverIndex(null)}
+                  onClick={() => onSelectRecord?.(point.record)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectRecord?.(point.record);
+                    }
+                  }}
+                />
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={hoverIndex === index ? 7 : 5}
+                  fill={hoverIndex === index ? "var(--foreground)" : "var(--primary)"}
+                  stroke="var(--card)"
+                  strokeWidth="2"
+                  pointerEvents="none"
+                  aria-hidden="true"
+                />
+              </g>
+            ))}
+            {Array.from({ length: 4 }, (_, index) => {
+              const value = Math.round((chart.max / 3) * index);
+              return (
+                <g key={value}>
+                  <line
+                    x1={chart.left}
+                    x2={chart.width - chart.right}
+                    y1={chart.y(value)}
+                    y2={chart.y(value)}
+                    stroke="var(--border)"
+                  />
+                  <text
+                    x="6"
+                    y={chart.y(value) + 4}
+                    fontSize="12"
+                    fill="var(--muted-foreground)"
                   >
-                    {isHovered && (
-                      <line
-                        x1={cx}
-                        y1={padTop}
-                        x2={cx}
-                        y2={padTop + innerH}
-                        stroke="#0d9488"
-                        strokeWidth="1"
-                        strokeDasharray="2 2"
-                      />
-                    )}
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={isHovered ? 6 : 4}
-                      fill={pt.totalPatients >= pt.capacity ? '#dc2626' : '#0d9488'}
-                      stroke="#ffffff"
-                      strokeWidth="2"
-                    />
-                    <text
-                      x={cx}
-                      y={cy - 10}
-                      textAnchor="middle"
-                      className="text-[10px] font-mono fill-slate-700 font-semibold"
-                    >
-                      {pt.totalPatients}
-                    </text>
-                    {/* X-Axis label */}
-                    <text
-                      x={cx}
-                      y={chartHeight - 18}
-                      textAnchor="middle"
-                      className="text-[10px] fill-slate-500 font-mono"
-                    >
-                      {pt.date.slice(8)}/{pt.date.slice(5, 7)}
-                    </text>
-                    <text
-                      x={cx}
-                      y={chartHeight - 6}
-                      textAnchor="middle"
-                      className="text-[10px] fill-slate-400"
-                    >
-                      {pt.shift}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        )}
-      </div>
-
-      {/* Section 2: Patient Classification Breakdown & Shift Comparison */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Patient Acuity Categories 1-5 Donut Graph */}
-        <div className="lg:col-span-7 p-6 bg-white border border-slate-200 rounded-lg space-y-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              02. กราฟโดนัทสัดส่วนประเภทผู้ป่วย (1 อาการน้อยสุด – 5 วิกฤต)
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              สะท้อนโครงสร้างความรุนแรงของผู้ป่วยและความต้องการอัตรากำลังพยาบาลของตึกผู้ป่วยใน
-            </p>
-          </div>
-
-          <PatientCategoryDonutChart
-            counts={{
-              cat1: summaryStats.catTotals.cat1,
-              cat2: summaryStats.catTotals.cat2,
-              cat3: summaryStats.catTotals.cat3,
-              cat4: summaryStats.catTotals.cat4,
-              cat5: summaryStats.catTotals.cat5,
-            }}
-            shiftCount={records.length}
-          />
+                    {value}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
         </div>
-
-        {/* Right: Shift Movement Comparison Table */}
-        <div className="lg:col-span-5 p-6 bg-white border border-slate-200 rounded-lg space-y-4">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              03. เปรียบเทียบปริมาณงานแยกตามเวร
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              ยอดผู้ป่วยเฉลี่ยและการเคลื่อนไหวแยกตามเวรดึก · เวรเช้า · เวรบ่าย
+        <div className="mt-3 flex flex-wrap gap-5 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-2">
+            <span className="size-3 rounded-full bg-primary" />
+            ผู้ป่วยคงเหลือ
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="w-5 border-t border-dashed border-muted-foreground" />
+            ศักยภาพเตียง
+          </span>
+        </div>
+      </section>
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className="min-w-0 rounded-xl border border-border bg-card p-5 sm:p-7">
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold">การจำแนกผู้ป่วยประเภท 1–5</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              ยอดรวมจาก {records.length} เวร
             </p>
           </div>
-
-          <div className="overflow-x-auto pt-1">
-            <table className="w-full text-left border-collapse">
+          <PatientCategoryDonutChart
+            counts={summary.categories}
+          />
+        </section>
+        <section className="min-w-0 rounded-xl border border-border bg-card p-5 sm:p-7">
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold">การเคลื่อนไหวแยกตามเวร</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[34rem] border-collapse text-left text-sm">
+              <caption className="sr-only">
+                เปรียบเทียบค่าเฉลี่ยผู้ป่วยและการเคลื่อนไหวของผู้ป่วยแยกตามเวร
+              </caption>
               <thead>
-                <tr className="border-b border-slate-200 text-xs text-slate-500">
-                  <th className="py-2.5 font-medium">เวรปฏิบัติงาน</th>
-                  <th className="py-2.5 font-medium text-right">เฉลี่ยคงเหลือ</th>
-                  <th className="py-2.5 font-medium text-right">รับใหม่รวม</th>
-                  <th className="py-2.5 font-medium text-right">จำหน่ายรวม</th>
-                  <th className="py-2.5 font-medium text-right">ส่งต่อรวม</th>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="px-2 py-3 font-medium" scope="col">
+                    เวรปฏิบัติงาน
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-3 text-right font-medium" scope="col">
+                    เฉลี่ยคงเหลือ
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-3 text-right font-medium" scope="col">
+                    รับใหม่รวม
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-3 text-right font-medium" scope="col">
+                    จำหน่ายรวม
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-3 text-right font-medium" scope="col">
+                    ส่งต่อรวม
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 text-xs">
-                {(['ดึก', 'เช้า', 'บ่าย'] as ShiftType[]).map((sh) => {
-                  const row = summaryStats.byShift[sh];
+              <tbody className="divide-y divide-border">
+                {shifts.map((shift) => {
+                  const item = summary.byShift[shift];
+                  const average = item.count ? item.totalPatients / item.count : 0;
                   return (
-                    <tr key={sh} className="hover:bg-slate-50">
-                      <td className="py-3 font-medium text-slate-900">
-                        <div>{SHIFT_META[sh].label}</div>
-                        <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-                          {row.count} เวรที่บันทึก
-                        </div>
+                    <tr key={shift} className="align-middle">
+                      <th className="px-2 py-3 font-medium text-foreground" scope="row">
+                        <span className="block whitespace-nowrap">{SHIFT_META[shift].label}</span>
+                        <span className="mt-0.5 block whitespace-nowrap text-xs font-normal text-muted-foreground">
+                          บันทึก {item.count} เวร
+                        </span>
+                      </th>
+                      <td className="whitespace-nowrap px-2 py-3 text-right font-mono tabular-nums text-primary">
+                        {average.toFixed(1)} ราย
                       </td>
-                      <td className="py-3 text-right font-mono tabular-nums font-semibold text-slate-900">
-                        {row.avgPatients} ราย
+                      <td className="whitespace-nowrap px-2 py-3 text-right font-mono tabular-nums text-foreground">
+                        +{item.admits}
                       </td>
-                      <td className="py-3 text-right font-mono tabular-nums text-teal-700 font-medium">
-                        +{row.admits}
+                      <td className="whitespace-nowrap px-2 py-3 text-right font-mono tabular-nums text-foreground">
+                        −{item.discharges}
                       </td>
-                      <td className="py-3 text-right font-mono tabular-nums text-slate-700">
-                        -{row.discharges}
-                      </td>
-                      <td className="py-3 text-right font-mono tabular-nums text-amber-700">
-                        {row.referrals}
+                      <td className="whitespace-nowrap px-2 py-3 text-right font-mono tabular-nums text-foreground">
+                        {item.referrals}
                       </td>
                     </tr>
                   );
@@ -494,8 +427,54 @@ export const CensusAnalytics: React.FC<CensusAnalyticsProps> = ({
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
 };
+
+function Metric({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "primary" | "secondary" | "accent" | "warning";
+}) {
+  const toneClasses = {
+    primary: {
+      surface: "bg-surface-cyan",
+      icon: "text-brand-cyan-strong",
+    },
+    secondary: {
+      surface: "bg-surface-aqua",
+      icon: "text-secondary-foreground",
+    },
+    accent: {
+      surface: "bg-surface-emerald",
+      icon: "text-brand-emerald-strong",
+    },
+    warning: {
+      surface: "bg-surface-warning",
+      icon: "text-amber-700",
+    },
+  } as const;
+  const { surface: surfaceClass, icon: iconClass } = toneClasses[tone];
+  return (
+    <div className={`min-w-0 p-4 sm:p-5 ${surfaceClass}`}>
+      <div className={`flex items-center gap-2 ${iconClass}`}>
+        {icon}
+        <span className="text-sm text-muted-foreground">{label}</span>
+      </div>
+      <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-foreground">
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}

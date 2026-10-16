@@ -1,0 +1,17 @@
+.git
+.github
+.next
+node_modules
+.env
+.env.*
+!.env.example
+.impeccable
+playwright-report
+test-results
+coverage
+*.log
+.DS_Store
+README.md
+DESIGN.md
+PRODUCT.md
+CONTEXT.md

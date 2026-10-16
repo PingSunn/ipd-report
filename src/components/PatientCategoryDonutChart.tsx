@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { PATIENT_CATEGORIES } from '../types/census';
+"use client";
+
+import React, { useState } from "react";
+import { PATIENT_CATEGORIES } from "../types/census";
 
 export interface CategoryCounts {
   cat1: number;
@@ -8,193 +10,153 @@ export interface CategoryCounts {
   cat4: number;
   cat5: number;
 }
-
 interface PatientCategoryDonutChartProps {
   counts: CategoryCounts;
-  shiftCount?: number; // If > 1, also shows average per shift in legend
   subtitle?: string;
+  stacked?: boolean;
 }
 
-export const PatientCategoryDonutChart: React.FC<PatientCategoryDonutChartProps> = ({
-  counts,
-  shiftCount = 1,
-}) => {
-  const [hoveredKey, setHoveredKey] = useState<keyof CategoryCounts | null>(null);
+const CATEGORY_COLORS: Record<keyof CategoryCounts, string> = {
+  cat1: "var(--category-1)",
+  cat2: "var(--category-2)",
+  cat3: "var(--category-3)",
+  cat4: "var(--category-4)",
+  cat5: "var(--category-5)",
+};
 
-  const totalClassified =
-    (counts.cat1 || 0) +
-    (counts.cat2 || 0) +
-    (counts.cat3 || 0) +
-    (counts.cat4 || 0) +
-    (counts.cat5 || 0);
-
-  // SVG Donut geometry
-  const size = 210;
+export const PatientCategoryDonutChart: React.FC<
+  PatientCategoryDonutChartProps
+> = ({ counts, subtitle, stacked = false }) => {
+  const [activeKey, setActiveKey] = useState<keyof CategoryCounts | null>(null);
+  const total = PATIENT_CATEGORIES.reduce(
+    (sum, item) => sum + (counts[item.key] || 0),
+    0,
+  );
+  const size = 190;
   const center = size / 2;
-  const radius = 76;
-  const strokeWidth = 26;
+  const radius = 67;
+  const strokeWidth = 20;
   const circumference = 2 * Math.PI * radius;
-
-  // Compute segments
-  let cumulativeFraction = 0;
-  const segments = PATIENT_CATEGORIES.map((cat) => {
-    const value = counts[cat.key] || 0;
-    const fraction = totalClassified > 0 ? value / totalClassified : 0;
-    const percentage = Math.round(fraction * 1000) / 10;
-    const strokeLength = fraction * circumference;
-    const strokeOffset = -cumulativeFraction * circumference;
-    cumulativeFraction += fraction;
-
-    return {
-      ...cat,
+  let offset = 0;
+  const segments = PATIENT_CATEGORIES.map((item, index) => {
+    const value = counts[item.key] || 0;
+    const fraction = total ? value / total : 0;
+    const segment = {
+      ...item,
+      colorHex: CATEGORY_COLORS[item.key],
       value,
-      fraction,
-      percentage,
-      strokeLength,
-      strokeOffset,
+      percentage: fraction * 100,
+      length: fraction * circumference,
+      offset: -offset * circumference,
+      compactLabel: `ประเภท ${index + 1}`,
     };
+    offset += fraction;
+    return segment;
   });
-
-  const activeSegment = hoveredKey
-    ? segments.find((s) => s.key === hoveredKey) || null
+  const active = activeKey
+    ? segments.find((item) => item.key === activeKey) || null
     : null;
-
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-6 lg:gap-8">
-      {/* SVG Donut Graph */}
-      <div className="relative shrink-0 flex items-center justify-center">
+    <div
+      className={`flex flex-col items-center gap-6 ${stacked ? "" : "xl:flex-row"}`}
+    >
+      <div
+        className="relative shrink-0"
+        role="img"
+        aria-label="กราฟโดนัทแสดงสัดส่วนผู้ป่วยประเภท 1 ถึง 5"
+      >
         <svg
           width={size}
           height={size}
           viewBox={`0 0 ${size} ${size}`}
-          className="select-none"
-          aria-label="กราฟโดนัทแสดงสัดส่วนผู้ป่วยแยกตามประเภท 1 ถึง 5"
+          aria-hidden="true"
         >
-          {/* Base background ring */}
           <circle
             cx={center}
             cy={center}
             r={radius}
-            fill="transparent"
-            stroke="#f1f5f9"
+            fill="none"
+            stroke="var(--border)"
             strokeWidth={strokeWidth}
           />
-
-          {/* Donut Segments rotated -90deg so they start at 12 o'clock */}
-          <g transform={`rotate(-90 ${center} ${center})`}>
-            {totalClassified > 0 &&
-              segments.map((seg) => {
-                if (seg.value <= 0) return null;
-                const isHovered = hoveredKey === seg.key;
-                const isDimmed = hoveredKey !== null && !isHovered;
-
-                return (
-                  <circle
-                    key={seg.key}
-                    cx={center}
-                    cy={center}
-                    r={radius}
-                    fill="transparent"
-                    stroke={seg.colorHex}
-                    strokeWidth={isHovered ? strokeWidth + 4 : strokeWidth}
-                    strokeDasharray={`${seg.strokeLength} ${Math.max(
-                      0,
-                      circumference - seg.strokeLength
-                    )}`}
-                    strokeDashoffset={seg.strokeOffset}
-                    strokeLinecap="butt"
-                    className={`cursor-pointer transition-opacity duration-150 ${
-                      isDimmed ? 'opacity-35' : 'opacity-100'
-                    }`}
-                    onMouseEnter={() => setHoveredKey(seg.key)}
-                    onMouseLeave={() => setHoveredKey(null)}
-                  >
-                    <title>
-                      {seg.label}: {seg.value} ราย ({seg.percentage.toFixed(1)}%)
-                    </title>
-                  </circle>
-                );
-              })}
-          </g>
-        </svg>
-
-        {/* Center Donut Readout */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-4">
-          {activeSegment ? (
-            <>
-              <span className="text-[11px] font-medium text-slate-500 leading-tight">
-                {activeSegment.shortLabel}
-              </span>
-              <span className="text-2xl font-bold font-mono tabular-nums text-slate-900 mt-0.5">
-                {activeSegment.value}
-              </span>
-              <span className="text-xs font-mono tabular-nums font-semibold text-teal-700">
-                {activeSegment.percentage.toFixed(1)}%
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-[11px] font-medium text-slate-500">
-                รวมจำแนกประเภท
-              </span>
-              <span className="text-2xl font-bold font-mono tabular-nums text-slate-900 mt-0.5">
-                {totalClassified}
-              </span>
-              <span className="text-[11px] text-slate-500">
-                ราย (1 น้อยสุด – 5 วิกฤต)
-              </span>
-            </>
+          {total > 0 && (
+            <g transform={`rotate(-90 ${center} ${center})`}>
+              {segments.map(
+                (segment) =>
+                  segment.value > 0 && (
+                    <circle
+                      key={segment.key}
+                      cx={center}
+                      cy={center}
+                      r={radius}
+                      fill="none"
+                      stroke={segment.colorHex}
+                      strokeWidth={
+                        activeKey === segment.key
+                          ? strokeWidth + 4
+                          : strokeWidth
+                      }
+                      strokeDasharray={`${segment.length} ${circumference - segment.length}`}
+                      strokeDashoffset={segment.offset}
+                      className={`transition-opacity duration-200 ${activeKey && activeKey !== segment.key ? "opacity-30" : ""}`}
+                      onMouseEnter={() => setActiveKey(segment.key)}
+                      onMouseLeave={() => setActiveKey(null)}
+                    >
+                      <title>
+                        {segment.label}: {segment.value} ราย (
+                        {segment.percentage.toFixed(1)}%)
+                      </title>
+                    </circle>
+                  ),
+              )}
+            </g>
           )}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-xs text-muted-foreground">
+            {active?.compactLabel || "รวมจำแนกประเภท"}
+          </span>
+          <strong className="mt-1 font-mono text-2xl font-semibold tabular-nums text-foreground">
+            {active?.value ?? total}
+          </strong>
+          <span className="text-xs text-muted-foreground">
+            {active ? `${active.percentage.toFixed(1)}%` : subtitle || "ราย"}
+          </span>
         </div>
       </div>
-
-      {/* Structured 1-5 Legend Table */}
-      <div className="flex-1 w-full space-y-2">
-        {segments.map((seg) => {
-          const isHovered = hoveredKey === seg.key;
-          const avgPerShift =
-            shiftCount > 1 ? Math.round((seg.value / shiftCount) * 10) / 10 : null;
-
-          return (
-            <div
-              key={seg.key}
-              onMouseEnter={() => setHoveredKey(seg.key)}
-              onMouseLeave={() => setHoveredKey(null)}
-              className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                isHovered
-                  ? 'border-slate-300 bg-slate-50'
-                  : 'border-slate-100 bg-white hover:bg-slate-50/70'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span
-                  className="w-3 h-3 rounded-xs shrink-0"
-                  style={{ backgroundColor: seg.colorHex }}
-                  aria-hidden="true"
-                />
-                <div className="truncate">
-                  <span className="text-xs font-semibold text-slate-900">
-                    {seg.label}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 font-mono tabular-nums text-xs shrink-0">
-                {avgPerShift !== null && (
-                  <span className="text-slate-500 text-[11px] hidden sm:inline">
-                    เฉลี่ย {avgPerShift}/เวร
-                  </span>
-                )}
-                <span className="font-bold text-slate-900">
-                  {seg.value} ราย
-                </span>
-                <span className="w-12 text-right text-slate-500">
-                  ({seg.percentage.toFixed(1)}%)
-                </span>
-              </div>
-            </div>
-          );
-        })}
+      <div
+        className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-1"
+        role="group"
+        aria-label="คำอธิบายสัดส่วนผู้ป่วย"
+      >
+        {segments.map((segment) => (
+          <button
+            key={segment.key}
+            type="button"
+            aria-label={`${segment.label}: ${segment.value} ราย (${segment.percentage.toFixed(1)}%)`}
+            title={segment.shortLabel}
+            className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border px-2.5 text-left transition-colors ${activeKey === segment.key ? "border-primary bg-primary/10" : "border-border hover:bg-muted"}`}
+            onMouseEnter={() => setActiveKey(segment.key)}
+            onMouseLeave={() => setActiveKey(null)}
+            onFocus={() => setActiveKey(segment.key)}
+            onBlur={() => setActiveKey(null)}
+          >
+            <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium">
+              <span
+                className="size-3 shrink-0 rounded-sm"
+                style={{ backgroundColor: segment.colorHex }}
+                aria-hidden="true"
+              />
+              <span className="whitespace-nowrap">{segment.compactLabel}</span>
+            </span>
+            <span className="shrink-0 text-right font-mono text-xs tabular-nums">
+              <strong>{segment.value}</strong>
+              <span className="ml-1 text-xs text-muted-foreground">
+                ({segment.percentage.toFixed(1)}%)
+              </span>
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );

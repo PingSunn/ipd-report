@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Generated Prisma client
+src/generated/prisma/
+
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.impeccable/review/
+playwright-report/
+test-results/

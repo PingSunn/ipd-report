@@ -1,227 +1,166 @@
-import {
+import type {
   CensusRecord,
   DeleteCensusResponse,
   SaveCensusResponse,
+  ShiftType,
 } from '../types/census';
 import { sortRecordsDesc } from '../utils/censusUtils';
 
-const LOCAL_STORAGE_KEY = 'ongkharak_ipd_census_live_v2';
+type ServerCensusResponse = {
+  success: boolean;
+  records?: unknown;
+  record?: unknown;
+  serverTime?: unknown;
+  message?: unknown;
+  error?: unknown;
+};
 
-declare global {
-  interface Window {
-    google?: {
-      script?: {
-        run?: {
-          withSuccessHandler: (callback: (result: any) => void) => {
-            withFailureHandler: (errorCallback: (error: any) => void) => {
-              getCensusRecords: () => void;
-              saveCensusRecord: (record: CensusRecord) => void;
-              deleteCensusRecord: (id: string) => void;
-            };
-          };
-        };
-      };
-    };
+class CensusApiError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CensusApiError';
   }
 }
 
-export function isRunningInGoogleAppsScript(): boolean {
-  return Boolean(
-    typeof window !== 'undefined' &&
-      window.google &&
-      window.google.script &&
-      window.google.script.run
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isShift(value: unknown): value is ShiftType {
+  return value === 'เช้า' || value === 'บ่าย' || value === 'ดึก';
+}
+
+function isCensusRecord(value: unknown): value is CensusRecord {
+  if (!isObject(value)) return false;
+  const requiredNumbers = [
+    'totalPatients',
+    'capacity',
+    'availableBeds',
+    'newPatients',
+    'discharges',
+    'referrals',
+    'cat1',
+    'cat2',
+    'cat3',
+    'cat4',
+    'cat5',
+  ];
+  return (
+    typeof value.id === 'string' &&
+    typeof value.date === 'string' &&
+    isShift(value.shift) &&
+    typeof value.note === 'string' &&
+    typeof value.updatedAt === 'string' &&
+    requiredNumbers.every(
+      (field) => typeof value[field] === 'number' && Number.isFinite(value[field])
+    )
   );
 }
 
-function getLocalFallbackRecords(): CensusRecord[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error('Failed to read local storage records:', e);
+function errorMessage(value: unknown, fallback: string): string {
+  if (isObject(value) && typeof value.error === 'string' && value.error.trim()) {
+    return value.error;
   }
-  return [];
+  return fallback;
 }
 
-function saveLocalFallbackRecords(records: CensusRecord[]): void {
+async function readResponse(response: Response): Promise<ServerCensusResponse> {
+  let value: unknown;
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(records));
-  } catch (e) {
-    console.error('Failed to save local storage records:', e);
+    value = await response.json();
+  } catch {
+    value = undefined;
   }
+  if (!isObject(value) || typeof value.success !== 'boolean') {
+    return { success: false };
+  }
+
+  return {
+    success: value.success,
+    records: value.records,
+    record: value.record,
+    serverTime: value.serverTime,
+    message: value.message,
+    error: value.error,
+  };
 }
 
-/**
- * Fetch all census records (always fetches latest modified state without cache)
- */
+function rethrowRequestError(error: unknown, fallback: string): never {
+  if (error instanceof CensusApiError) {
+    throw error;
+  }
+  throw new Error(fallback);
+}
+
+/** Fetch the latest records from the Next.js API. */
 export async function getCensusRecords(): Promise<{
   records: CensusRecord[];
-  source: 'gas-native' | 'server' | 'local';
+  source: 'server';
   syncedAt: string;
 }> {
-  const syncedAt = new Date().toISOString();
-
-  // 1. Check native Google Apps Script HtmlService environment
-  if (isRunningInGoogleAppsScript()) {
-    return new Promise((resolve, reject) => {
-      window.google!.script!.run!
-        .withSuccessHandler((res: CensusRecord[]) => {
-          const list = Array.isArray(res) ? res : [];
-          saveLocalFallbackRecords(list);
-          resolve({
-            records: sortRecordsDesc(list),
-            source: 'gas-native',
-            syncedAt: new Date().toISOString(),
-          });
-        })
-        .withFailureHandler((err: any) => {
-          reject(new Error(err?.message || String(err)));
-        })
-        .getCensusRecords();
-    });
-  }
-
-  // 2. Call Express Backend API (/api/census) with cache-busting timestamp
   try {
     const response = await fetch(`/api/census?_t=${Date.now()}`, {
       cache: 'no-store',
+      credentials: 'same-origin',
     });
-    if (response.ok) {
-      const data = await response.json();
-      if (Array.isArray(data.records)) {
-        saveLocalFallbackRecords(data.records);
-        return {
-          records: sortRecordsDesc(data.records),
-          source: 'server',
-          syncedAt: data.serverTime || syncedAt,
-        };
-      }
+    const data = await readResponse(response);
+    if (!response.ok || !data.success || !Array.isArray(data.records)) {
+      throw new CensusApiError(errorMessage(data, 'ไม่สามารถโหลดข้อมูลได้ในขณะนี้'));
     }
-  } catch (err) {
-    console.warn('Server API unreachable, using local storage:', err);
-  }
 
-  // 3. LocalStorage Fallback
-  const fallback = getLocalFallbackRecords();
-  return {
-    records: sortRecordsDesc(fallback),
-    source: 'local',
-    syncedAt,
-  };
+    if (!data.records.every(isCensusRecord)) {
+      throw new CensusApiError('ข้อมูลที่ได้รับจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+    }
+
+    return {
+      records: sortRecordsDesc(data.records),
+      source: 'server',
+      syncedAt: typeof data.serverTime === 'string' ? data.serverTime : new Date().toISOString(),
+    };
+  } catch (error: unknown) {
+    rethrowRequestError(error, 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อโหลดข้อมูลได้');
+  }
 }
 
-/**
- * Insert or Update a patient census record
- */
+/** Insert or update a census record through the Next.js API. */
 export async function saveCensusRecord(record: CensusRecord): Promise<SaveCensusResponse> {
-  const payload: CensusRecord = {
-    ...record,
-    updatedAt: new Date().toISOString(),
-  };
+  const payload: CensusRecord = { ...record, updatedAt: new Date().toISOString() };
 
-  // 1. Native Google Apps Script environment
-  if (isRunningInGoogleAppsScript()) {
-    return new Promise((resolve) => {
-      window.google!.script!.run!
-        .withSuccessHandler((res: SaveCensusResponse) => {
-          resolve(res || { success: true, message: 'บันทึกสำเร็จ', record: payload });
-        })
-        .withFailureHandler((err: any) => {
-          resolve({ success: false, error: err?.message || String(err) });
-        })
-        .saveCensusRecord(payload);
-    });
-  }
-
-  // 2. Express Backend API
   try {
     const response = await fetch('/api/census', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
-    if (response.ok) {
-      const res = await response.json();
-      const savedRecord: CensusRecord = res.record || payload;
-      const current = getLocalFallbackRecords();
-      const idx = current.findIndex(
-        (r) =>
-          String(r.id) === String(savedRecord.id) ||
-          (r.date === savedRecord.date && r.shift === savedRecord.shift)
-      );
-      if (idx >= 0) {
-        current[idx] = savedRecord;
-      } else {
-        current.push(savedRecord);
-      }
-      saveLocalFallbackRecords(current);
-      return {
-        success: true,
-        message: res.message || 'บันทึกสำเร็จ',
-        record: savedRecord,
-      };
+    const data = await readResponse(response);
+    if (!response.ok || !data.success || !isCensusRecord(data.record)) {
+      throw new CensusApiError(errorMessage(data, 'ไม่สามารถบันทึกข้อมูลได้ในขณะนี้'));
     }
-  } catch (err) {
-    console.warn('Server API save fallback to local:', err);
-  }
 
-  // 3. LocalStorage Fallback
-  const current = getLocalFallbackRecords();
-  const idx = current.findIndex(
-    (r) =>
-      String(r.id) === String(payload.id) ||
-      (r.date === payload.date && r.shift === payload.shift)
-  );
-  if (idx >= 0) {
-    current[idx] = payload;
-  } else {
-    current.push(payload);
+    return {
+      success: true,
+      message: typeof data.message === 'string' ? data.message : 'บันทึกสำเร็จ',
+      record: data.record,
+    };
+  } catch (error: unknown) {
+    rethrowRequestError(error, 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อบันทึกข้อมูลได้');
   }
-  saveLocalFallbackRecords(current);
-  return { success: true, message: 'บันทึกสำเร็จ', record: payload };
 }
 
-/**
- * Delete a census record by ID
- */
+/** Delete a census record by ID through the Next.js API. */
 export async function deleteCensusRecord(id: string): Promise<DeleteCensusResponse> {
-  // 1. Native Google Apps Script environment
-  if (isRunningInGoogleAppsScript()) {
-    return new Promise((resolve) => {
-      window.google!.script!.run!
-        .withSuccessHandler((res: DeleteCensusResponse) => {
-          resolve(res || { success: true });
-        })
-        .withFailureHandler((err: any) => {
-          resolve({ success: false, error: err?.message || String(err) });
-        })
-        .deleteCensusRecord(id);
-    });
-  }
-
-  // 2. Express Backend API
   try {
     const response = await fetch(`/api/census/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
-    if (response.ok) {
-      const current = getLocalFallbackRecords().filter((r) => String(r.id) !== String(id));
-      saveLocalFallbackRecords(current);
-      return { success: true };
+    const data = await readResponse(response);
+    if (!response.ok || !data.success) {
+      throw new CensusApiError(errorMessage(data, 'ไม่สามารถลบข้อมูลได้ในขณะนี้'));
     }
-  } catch (err) {
-    console.warn('Server API delete fallback to local:', err);
+    return { success: true };
+  } catch (error: unknown) {
+    rethrowRequestError(error, 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อลบข้อมูลได้');
   }
-
-  // 3. LocalStorage Fallback
-  const current = getLocalFallbackRecords();
-  const filtered = current.filter((r) => String(r.id) !== String(id));
-  saveLocalFallbackRecords(filtered);
-  return { success: true };
 }

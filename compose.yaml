@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ipd_report
+      POSTGRES_USER: ipd_report
+      POSTGRES_PASSWORD: ipd_report_local
+    ports:
+      - '127.0.0.1:45432:5432'
+    volumes:
+      - ipd_report_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ipd_report -d ipd_report']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  ipd_report_postgres_data:

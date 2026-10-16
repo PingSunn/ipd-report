@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipd-report-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ipd-report-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ipd-report-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: ghcr.io/pingsunn/ipd-report-ops@sha256:REPLACE_WITH_OPS_DIGEST
+          imagePullPolicy: IfNotPresent
+          command:
+            - bun
+            - run
+            - line:worker
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ipd-report-env
+                  key: DATABASE_URL
+            - name: LINE_CHANNEL_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ipd-report-env
+                  key: LINE_CHANNEL_ACCESS_TOKEN
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
