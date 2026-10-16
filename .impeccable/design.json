@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T00:00:00Z",
+  "title": "Design System: IPD Report",
+  "extensions": {
+    "colorMeta": {
+      "background": { "role": "background", "displayName": "Ocean Background", "canonical": "#edf5f7" },
+      "foreground": { "role": "text", "displayName": "Ocean Foreground", "canonical": "#102a43" },
+      "surface": { "role": "surface", "displayName": "White Surface", "canonical": "#ffffff" },
+      "brand-navy": { "role": "primary", "displayName": "Brand Navy", "canonical": "#123b5d", "tonalRamp": ["#0b2944", "#123b5d", "#2e5d7d", "#6f99b4", "#d7e6ee"] },
+      "brand-navy-strong": { "role": "primary-hover", "displayName": "Brand Navy Strong", "canonical": "#0b2944", "tonalRamp": ["#061a2c", "#0b2944", "#1d496d", "#5e88a5", "#c9dce8"] },
+      "brand-cyan": { "role": "interactive", "displayName": "Brand Cyan", "canonical": "#04a4b2", "tonalRamp": ["#04515a", "#04a4b2", "#39bdc6", "#8be0e4", "#d8f5f5"] },
+      "brand-cyan-strong": { "role": "interactive-text", "displayName": "Brand Cyan Strong", "canonical": "#06717e", "tonalRamp": ["#044b54", "#06717e", "#168d9a", "#70c7cf", "#d8f5f5"] },
+      "brand-aqua": { "role": "highlight", "displayName": "Brand Aqua", "canonical": "#64d3d0", "tonalRamp": ["#146b6a", "#64d3d0", "#91e0de", "#c1efed", "#e8fbfa"] },
+      "brand-emerald": { "role": "positive", "displayName": "Brand Emerald", "canonical": "#20a886", "tonalRamp": ["#105540", "#20a886", "#58c3a7", "#a6e3cf", "#e3f8f0"] },
+      "brand-emerald-strong": { "role": "positive-text", "displayName": "Brand Emerald Strong", "canonical": "#08705a", "tonalRamp": ["#064b3d", "#08705a", "#159174", "#79c7b2", "#e3f8f0"] },
+      "surface-aqua": { "role": "context", "displayName": "Surface Aqua", "canonical": "#dff5f4" },
+      "surface-cyan": { "role": "context", "displayName": "Surface Cyan", "canonical": "#dceff5" },
+      "surface-emerald": { "role": "positive-surface", "displayName": "Surface Emerald", "canonical": "#e2f4ed" },
+      "surface-warning": { "role": "warning-surface", "displayName": "Surface Warning", "canonical": "#fff1d6" },
+      "surface-danger": { "role": "danger-surface", "displayName": "Surface Danger", "canonical": "#fde4e5" },
+      "muted": { "role": "muted-surface", "displayName": "Muted Blue", "canonical": "#e5eff3" },
+      "muted-foreground": { "role": "secondary-text", "displayName": "Muted Foreground", "canonical": "#526b7a" },
+      "accent": { "role": "selected-surface", "displayName": "Accent Aqua", "canonical": "#c8eeee" },
+      "accent-foreground": { "role": "selected-text", "displayName": "Accent Foreground", "canonical": "#0c4e66" },
+      "border": { "role": "border", "displayName": "Ocean Border", "canonical": "#cadde5" },
+      "input": { "role": "input-border", "displayName": "Ocean Input", "canonical": "#a9c4d0" },
+      "ring": { "role": "focus", "displayName": "Brand Cyan Ring", "canonical": "#04a4b2" },
+      "destructive": { "role": "danger", "displayName": "Destructive Coral", "canonical": "#c44850" },
+      "destructive-strong": { "role": "danger-text", "displayName": "Destructive Coral Strong", "canonical": "#9f2933" },
+      "category-1": { "role": "category", "displayName": "Category 1 Green", "canonical": "#1caf83" },
+      "category-2": { "role": "category", "displayName": "Category 2 Cyan", "canonical": "#16a7b8" },
+      "category-3": { "role": "category", "displayName": "Category 3 Blue", "canonical": "#3578c6" },
+      "category-4": { "role": "category", "displayName": "Category 4 Amber", "canonical": "#e1a22b" },
+      "category-5": { "role": "category", "displayName": "Category 5 Coral", "canonical": "#cf4f57" },
+      "category-1-surface": { "role": "category-surface", "displayName": "Category 1 Green Surface", "canonical": "#e6f7f1" },
+      "category-2-surface": { "role": "category-surface", "displayName": "Category 2 Cyan Surface", "canonical": "#e2f6f8" },
+      "category-3-surface": { "role": "category-surface", "displayName": "Category 3 Blue Surface", "canonical": "#e8f0fa" },
+      "category-4-surface": { "role": "category-surface", "displayName": "Category 4 Amber Surface", "canonical": "#fff5df" },
+      "category-5-surface": { "role": "category-surface", "displayName": "Category 5 Coral Surface", "canonical": "#fbeaec" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Noto Sans Thai Display", "purpose": "Large page titles with tight tracking." },
+      "headline": { "displayName": "Noto Sans Thai Headline", "purpose": "Shift summary, entry, LINE, and history headings." },
+      "title": { "displayName": "Noto Sans Thai Title", "purpose": "Analytics panels and section headings." },
+      "body": { "displayName": "Noto Sans Thai Body", "purpose": "Thai instructions, form values, and primary reading text." },
+      "label": { "displayName": "Noto Sans Thai Label", "purpose": "Navigation, field labels, buttons, and metadata." },
+      "data": { "displayName": "IBM Plex Mono Data", "purpose": "Tabular counts, percentages, capacity, and workload values." }
+    },
+    "shadows": [
+      { "name": "workspace-ambient", "value": "0 8px 24px rgba(18,59,93,0.08)", "purpose": "Quiet separation for the Entry workspace." },
+      { "name": "card-default", "value": "0 1px 2px rgba(16,42,67,0.05)", "purpose": "Subtle separation for overview and analytics cards." },
+      { "name": "dialog-elevation", "value": "0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.1)", "purpose": "Boundary for destructive confirmation." }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "transition-colors", "purpose": "Short color transitions for buttons, chips, nav items, and legends." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "Disable scroll, animation, and transition duration for motion-sensitive users." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    { "name": "Primary Button", "kind": "button", "refersTo": "button-primary", "description": "Brand Navy action button for saving a census, creating a report, or copying the handover. Emerald is reserved for the Overview next-step action." },
+    { "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary", "description": "Input-bordered outline control for edit, refresh, reset, and other secondary actions; Surface Cyan appears on hover." },
+    { "name": "Census Field", "kind": "input", "refersTo": "field", "description": "Labeled white field for dates and numeric census values with a 44px minimum height and visible Brand Cyan focus ring." },
+    { "name": "Date Picker", "kind": "input", "refersTo": "field", "description": "Editable Buddhist Era date field with conditional clear action and a 44px calendar Popover trigger." },
+    { "name": "Select", "kind": "input", "refersTo": "select", "description": "Controlled Radix option list for shifts, history filters, and verified LINE groups with keyboard navigation and an explicit empty state." },
+    { "name": "Shift Selector", "kind": "chip", "refersTo": "shift-selector", "description": "Date-grouped selector that keeps report date and shift context attached to the current handover; selected state uses aqua surface, cyan border, text, and check." },
+    { "name": "Shift Summary Card", "kind": "card", "refersTo": "summary-card", "description": "Signature workspace combining current shift, totals, occupancy, movement, workload, category donut, note, and handover actions." },
+    { "name": "Recent Shift Groups", "kind": "chip", "refersTo": "shift-selector", "description": "Recent records grouped by date and ordered ดึก → เช้า → บ่าย; horizontal snap on mobile, two-column grid at sm, three-column grid at xl." },
+    { "name": "LINE Category Block", "kind": "custom", "refersTo": null, "description": "Shared copy contract for entry preview, editable manual LINE copy, and scheduled delivery: one heading plus five labeled care-demand/count lines, omitted together when disabled." },
+    { "name": "Compact Analytics", "kind": "custom", "refersTo": null, "description": "Four-cell metric band, selectable SVG trend chart, one category donut with five non-wrapping labels, and one three-row shift movement table." },
+    { "name": "Navigation Rail", "kind": "nav", "refersTo": "nav-item", "description": "Fixed 256px Brand Navy desktop rail with configured ward and hospital identity, five work routes, and a separate Settings route." },
+    { "name": "Mobile Bottom Navigation", "kind": "nav", "refersTo": "nav-item", "description": "Five-destination mobile navigation on Surface Aqua, at least 64px high with safe-area padding; Settings remains in the drawer/header route." },
+    { "name": "Settings Group", "kind": "custom", "refersTo": null, "description": "Grouped configured identity, capacity, report sections, LINE schedule, readiness, verified groups, and delivery history workflow." }
+  ],
+  "narrative": {
+    "northStar": "Ocean Health Handover Current",
+    "overview": "The workspace keeps one shift, its census, and its handover message together. A modern, calm, saturated ocean palette uses solid navy, cyan, aqua, pale blue, emerald, amber, and coral surfaces to make hierarchy visible while Noto Sans Thai and tabular mono values keep clinical reading efficient. Bright tokens provide fills and strong tokens provide accessible text; each patient category also has a quiet surface token. The visual direction applies across Overview, Entry, LINE, History, Analytics, and Settings while configured hospital and ward names remain the local identity.\n\nRecent records are grouped by date and ordered ดึก → เช้า → บ่าย. Analytics uses one donut and a compact movement table. The LINE category contract is one heading, `ประเภทผู้ป่วย`, followed by five labeled care-demand/count lines shared by preview, manual copy, and scheduled delivery when enabled. All surfaces are opaque solid colors; there are no gradients.",
+    "keyCharacteristics": [
+      "Shift-first workflow with shared selected-record context.",
+      "Whole-system ocean palette with layered solid surfaces and no gradients.",
+      "Bright tokens serve fills, strong tokens serve accessible text, and category surfaces provide quiet backgrounds.",
+      "Semantic patient categories progress green → cyan → blue → amber → coral.",
+      "Numeric emphasis through tabular values, explicit units, and Thai labels.",
+      "Soft 6–12px corners, restrained shadows, and 44px interaction targets.",
+      "Desktop rail and mobile bottom navigation preserve the five daily-work destinations.",
+      "Settings preserves configured ward/hospital identity and operational readiness details."
+    ],
+    "rules": [
+      { "name": "The Layered Surface Rule", "body": "Assign each workspace a solid surface role before adding elevation: canvas, navy navigation, aqua context, white content, emerald progress, amber warning, or coral error. Use bright tokens for fills and strong tokens for accessible text.", "section": "colors" },
+      { "name": "The Solid Surface Rule", "body": "Do not introduce gradients or decorative blends. Use opaque tokens, borders, and one calm workspace shadow when a boundary needs help.", "section": "elevation" },
+      { "name": "The Data Voice Rule", "body": "Use IBM Plex Mono only for values, rates, and compact quantities. Thai headings and instructions stay in Noto Sans Thai.", "section": "typography" },
+      { "name": "The One Shift Rule", "body": "Keep selected date, shift, totals, category mix, and handover actions within one readable context.", "section": "layout" },
+      { "name": "The Recent Shift Order Rule", "body": "Group recent records by date and order shifts ดึก → เช้า → บ่าย within each date. Keep the selected record visibly selected and let mobile groups scroll horizontally.", "section": "layout" },
+      { "name": "The Shared LINE Category Rule", "body": "When enabled, use one heading, ประเภทผู้ป่วย, followed by five labeled care-demand/count lines in the same order for entry preview, manual copy, and scheduled delivery.", "section": "components" },
+      { "name": "The Compact Analytics Rule", "body": "Keep one donut, five short non-wrapping legend labels, and one three-row movement table ordered ดึก → เช้า → บ่าย.", "section": "components" }
+    ],
+    "dos": [
+      "Keep Brand Navy for hierarchy, Brand Cyan for interaction, and emerald for positive next steps.",
+      "Preserve configured hospital and ward identity wherever the application names the workspace.",
+      "Use the five category colors with their labels and numbers; pair status color with text or icon cues.",
+      "Preserve 44px controls, safe-area mobile navigation, visible focus, and reduced-motion behavior.",
+      "Treat empty census and delivery history as real empty states with a clear first action.",
+      "Keep the LINE category block shared across preview, manual copy, and scheduled delivery.",
+      "Keep analytics compact and movement comparisons in one three-row table."
+    ],
+    "donts": [
+      "Do not replace configured hospital or ward names with a generic visual brand label.",
+      "Do not use gradients, gradient tokens, or decorative color blends.",
+      "Do not make every metric a saturated card; use white workspaces and muted bands with intent.",
+      "Do not rely on color alone for occupancy, errors, or selected state.",
+      "Do not wrap category legend labels or split movement comparisons into separate cards.",
+      "Do not invent patient records or imply a native-device implementation; tested mobile is a 390px Chrome viewport."
+    ]
+  }
+}

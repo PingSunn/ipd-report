@@ -1,37 +1,78 @@
-import React, { useMemo, useState } from 'react';
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Check,
-  Copy,
+  Download,
   Edit3,
-  FileSpreadsheet,
   MessageSquareText,
   Plus,
   Search,
   Trash2,
-  X,
-} from 'lucide-react';
-import { CensusRecord, SHIFT_META, ShiftType } from '../types/census';
+} from "lucide-react";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./ui/alert-dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./ui/empty";
+import { DatePicker } from "./ui/date-picker";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Skeleton } from "./ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+import { CensusRecord, SHIFT_META, ShiftType } from "../types/census";
 import {
   calculateOccupancyRate,
-  copyTextToClipboard,
   exportCensusToCSV,
   formatThaiDate,
-  formatUpdatedAt,
-  generateLineShiftSummary,
-  getOccupancyStatus,
   getTodayDateString,
-} from '../utils/censusUtils';
+} from "../utils/censusUtils";
 
 interface CensusRecordsTableProps {
   records: CensusRecord[];
   isLoading: boolean;
   onEdit: (record: CensusRecord) => void;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (id: string) => void;
   onCreateNew: () => void;
-  onOpenLineGenerator?: (record: CensusRecord) => void;
+  onOpenLineGenerator: (record: CensusRecord) => void;
+  canDelete?: boolean;
+  canExport?: boolean;
+  compact?: boolean;
 }
 
-type DateFilterPreset = 'all' | 'today' | '7d' | '30d' | 'custom';
+const shifts: Array<"all" | ShiftType> = ["all", "เช้า", "บ่าย", "ดึก"];
+const pageSize = 8;
+type DatePreset = "all" | "today" | "7d" | "30d" | "custom";
 
 export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
   records,
@@ -40,535 +81,466 @@ export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
   onDelete,
   onCreateNew,
   onOpenLineGenerator,
+  canDelete = true,
+  canExport = true,
+  compact = false,
 }) => {
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [shiftFilter, setShiftFilter] = useState<'all' | ShiftType>('all');
-  const [datePreset, setDatePreset] = useState<DateFilterPreset>('all');
-  const [customDate, setCustomDate] = useState<string>(getTodayDateString(0));
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const filteredRecords = useMemo(() => {
-    const todayStr = getTodayDateString(0);
-    const d7Str = getTodayDateString(-7);
-    const d30Str = getTodayDateString(-30);
-    const q = searchQuery.trim().toLowerCase();
-
-    return records.filter((r) => {
-      if (shiftFilter !== 'all' && r.shift !== shiftFilter) {
-        return false;
-      }
-
-      if (datePreset === 'today' && r.date !== todayStr) {
-        return false;
-      } else if (datePreset === '7d' && r.date < d7Str) {
-        return false;
-      } else if (datePreset === '30d' && r.date < d30Str) {
-        return false;
-      } else if (datePreset === 'custom' && customDate && r.date !== customDate) {
-        return false;
-      }
-
-      if (q) {
-        const thaiDate = formatThaiDate(r.date).toLowerCase();
-        const fullThaiDate = formatThaiDate(r.date, true).toLowerCase();
-        const matchNote = (r.note || '').toLowerCase().includes(q);
-        const matchDate =
-          r.date.toLowerCase().includes(q) ||
-          thaiDate.includes(q) ||
-          fullThaiDate.includes(q);
-        const matchId = r.id.toLowerCase().includes(q);
-        const matchShift = r.shift.toLowerCase().includes(q);
-        if (!matchNote && !matchDate && !matchId && !matchShift) {
-          return false;
-        }
-      }
-
-      return true;
+  const [query, setQuery] = useState("");
+  const [shiftFilter, setShiftFilter] = useState<"all" | ShiftType>("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [customDate, setCustomDate] = useState("");
+  const [page, setPage] = useState(1);
+  const today = getTodayDateString();
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return records.filter((record) => {
+      const matchesShift =
+        shiftFilter === "all" || record.shift === shiftFilter;
+      const matchesDate =
+        datePreset === "all" ||
+        (datePreset === "today" && record.date === today) ||
+        (datePreset === "7d" &&
+          record.date >= getTodayDateString(-6) &&
+          record.date <= today) ||
+        (datePreset === "30d" &&
+          record.date >= getTodayDateString(-29) &&
+          record.date <= today) ||
+        (datePreset === "custom" &&
+          (!customDate || record.date === customDate));
+      const matchesQuery =
+        !normalized ||
+        `${record.id} ${record.date} ${formatThaiDate(record.date, true)} ${record.shift} ${SHIFT_META[record.shift].label} ${record.note}`
+          .toLowerCase()
+          .includes(normalized);
+      return matchesShift && matchesDate && matchesQuery;
     });
-  }, [records, shiftFilter, datePreset, customDate, searchQuery]);
-
-  const filteredTotals = useMemo(() => {
-    if (filteredRecords.length === 0) {
-      return {
-        avgTotal: 0,
-        sumNew: 0,
-        sumDischarges: 0,
-        sumReferrals: 0,
-        avgOccupancy: 0,
-      };
-    }
-    let sumTotal = 0;
-    let sumNew = 0;
-    let sumDischarges = 0;
-    let sumReferrals = 0;
-    let sumOcc = 0;
-
-    for (const r of filteredRecords) {
-      sumTotal += r.totalPatients;
-      sumNew += r.newPatients;
-      sumDischarges += r.discharges;
-      sumReferrals += r.referrals;
-      sumOcc += calculateOccupancyRate(r.totalPatients, r.capacity);
-    }
-
-    return {
-      avgTotal: Math.round((sumTotal / filteredRecords.length) * 10) / 10,
-      sumNew,
-      sumDischarges,
-      sumReferrals,
-      avgOccupancy: Math.round((sumOcc / filteredRecords.length) * 10) / 10,
-    };
-  }, [filteredRecords]);
-
-  const handleCopyLineReport = async (record: CensusRecord) => {
-    const text = generateLineShiftSummary(record);
-    const ok = await copyTextToClipboard(text);
-    if (ok) {
-      setCopiedId(record.id);
-      setTimeout(() => setCopiedId(null), 2000);
-    }
+  }, [customDate, datePreset, query, records, shiftFilter, today]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const effectivePage = Math.min(page, pageCount);
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  const visibleRecords = compact
+    ? filtered.slice(0, 6)
+    : filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
+  const setSearch = (value: string) => {
+    setQuery(value);
+    setPage(1);
   };
-
-  const handleConfirmDelete = async (id: string) => {
-    setDeletingId(id);
-    try {
-      await onDelete(id);
-      setConfirmDeleteId(null);
-    } finally {
-      setDeletingId(null);
-    }
+  const setShift = (value: "all" | ShiftType) => {
+    setShiftFilter(value);
+    setPage(1);
   };
-
+  const setDateFilter = (value: DatePreset) => {
+    setDatePreset(value);
+    setPage(1);
+  };
+  if (isLoading)
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card p-5">
+        <Skeleton className="mb-4 h-11 bg-muted" />
+        <Skeleton className="h-52 bg-muted" />
+      </div>
+    );
+  if (records.length === 0)
+    return (
+      <Empty className="rounded-xl border-border bg-card py-16">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-secondary text-primary">
+            <Plus />
+          </EmptyMedia>
+          <EmptyTitle>ยังไม่มีรายการบันทึก</EmptyTitle>
+          <EmptyDescription>
+            ข้อมูลจากฐานข้อมูลกลางยังว่างอยู่
+            เริ่มบันทึกยอดเวรแรกเพื่อสร้างประวัติและการวิเคราะห์
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            onClick={onCreateNew}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus />
+            บันทึกยอดเวร
+          </Button>
+        </EmptyContent>
+      </Empty>
+    );
   return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-      {/* Filter Controls Header */}
-      <div className="p-4 sm:p-5 border-b border-slate-200 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Search Input */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ค้นหาวันที่, ผู้รายงาน, หมายเหตุเวร..."
-              className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600"
-            />
-            {searchQuery && (
+    <section className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-col gap-4 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="ค้นหาวันที่หรือหมายเหตุ"
+            className="h-11 pl-9"
+            aria-label="ค้นหารายการ"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {!compact && (
+            <div className="flex items-center gap-2">
+              <Select
+                value={datePreset}
+                onValueChange={(value) => setDateFilter(value as DatePreset)}
+              >
+                <SelectTrigger
+                  id="date-filter"
+                  aria-label="กรองตามช่วงวันที่"
+                  className="h-11 w-auto bg-background text-sm"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectGroup>
+                    <SelectItem value="all">ทุกช่วงเวลา</SelectItem>
+                    <SelectItem value="today">วันนี้</SelectItem>
+                    <SelectItem value="7d">7 วันล่าสุด</SelectItem>
+                    <SelectItem value="30d">30 วันล่าสุด</SelectItem>
+                    <SelectItem value="custom">วันที่กำหนด</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {datePreset === "custom" && (
+                <>
+                  <Label htmlFor="custom-date" className="sr-only">
+                    วันที่กำหนด
+                  </Label>
+                  <DatePicker
+                    id="custom-date"
+                    value={customDate}
+                    onChange={(value: string) => {
+                      setCustomDate(value);
+                      setPage(1);
+                    }}
+                    className="h-11 w-auto"
+                  />
+                </>
+              )}
+            </div>
+          )}
+          <div
+            className="flex gap-1 rounded-md border border-border p-1"
+            aria-label="กรองตามเวร"
+          >
+            {shifts.map((shift) => (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                aria-label="ล้างคำค้นหา"
+                key={shift}
+                onClick={() => setShift(shift)}
+                className={`min-h-11 rounded px-2.5 text-xs font-medium transition-colors ${shiftFilter === shift ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background"}`}
               >
-                <X className="w-3.5 h-3.5" />
+                {shift === "all" ? "ทุกเวร" : shift}
               </button>
-            )}
+            ))}
           </div>
-
-          {/* Interactive Filter Controls (Shift & Date Range) */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Shift Segmented Filter */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
-              {(
-                [
-                  { key: 'all', label: 'ทุกเวร' },
-                  { key: 'ดึก', label: 'เวรดึก' },
-                  { key: 'เช้า', label: 'เวรเช้า' },
-                  { key: 'บ่าย', label: 'เวรบ่าย' },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setShiftFilter(tab.key)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                    shiftFilter === tab.key
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Date Preset Segmented Filter */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
-              {(
-                [
-                  { key: 'all', label: 'ทั้งหมด' },
-                  { key: 'today', label: 'วันนี้' },
-                  { key: '7d', label: '7 วัน' },
-                  { key: '30d', label: '30 วัน' },
-                  { key: 'custom', label: 'เลือกวัน' },
-                ] as const
-              ).map((dTab) => (
-                <button
-                  key={dTab.key}
-                  type="button"
-                  onClick={() => setDatePreset(dTab.key)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                    datePreset === dTab.key
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {dTab.label}
-                </button>
-              ))}
-            </div>
-
-            {datePreset === 'custom' && (
-              <input
-                type="date"
-                value={customDate}
-                onChange={(e) => setCustomDate(e.target.value)}
-                className="h-8 px-2.5 rounded-lg border border-slate-300 bg-white font-mono tabular-nums text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-600"
-              />
-            )}
-
-            <button
-              type="button"
-              onClick={() => exportCensusToCSV(filteredRecords)}
-              disabled={filteredRecords.length === 0}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50 text-xs font-medium text-slate-700 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700" />
-              <span>ส่งออก CSV ({filteredRecords.length})</span>
-            </button>
-          </div>
+          {canExport && <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-11 border-input"
+            onClick={() => exportCensusToCSV(filtered)}
+            disabled={filtered.length === 0}
+          >
+            <Download />
+            ส่งออก CSV
+          </Button>}
         </div>
       </div>
-
-      {/* Loading State */}
-      {isLoading ? (
-        <div className="p-6 space-y-3">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="h-10 bg-slate-100 animate-pulse rounded-md" />
-          ))}
-        </div>
-      ) : filteredRecords.length === 0 ? (
-        /* Empty State */
-        <div className="py-14 px-6 text-center space-y-3">
-          <div className="text-sm font-semibold text-slate-900">
-            {records.length === 0
-              ? 'ยังไม่มีข้อมูลรายงานยอดผู้ป่วยในระบบ'
-              : 'ไม่พบรายการรายงานยอดผู้ป่วยตามเงื่อนไขที่เลือก'}
-          </div>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            {records.length === 0
-              ? 'กดปุ่มด้านล่างเพื่อเริ่มบันทึกยอดผู้ป่วยประจำเวรของตึกผู้ป่วยใน โรงพยาบาลองครักษ์ ข้อมูลจะถูกอัปเดตทันทีสำหรับผู้ใช้งานทุกคน'
-              : 'คุณสามารถล้างตัวกรองการค้นหา หรือกดปุ่มด้านล่างเพื่อบันทึกข้อมูลยอดผู้ป่วยประจำเวรใหม่'}
-          </p>
-          <div className="pt-2 flex items-center justify-center gap-3">
-            {(searchQuery || shiftFilter !== 'all' || datePreset !== 'all') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setShiftFilter('all');
-                  setDatePreset('all');
-                }}
-                className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors cursor-pointer"
-              >
-                ล้างตัวกรองทั้งหมด
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onCreateNew}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+      <div className="flex flex-col gap-3 p-4 md:hidden">
+        {visibleRecords.map((record) => {
+          const rate = calculateOccupancyRate(
+            record.totalPatients,
+            record.capacity,
+          );
+          return (
+            <article
+              key={record.id}
+              className="rounded-lg border border-border bg-background p-4"
             >
-              <Plus className="w-4 h-4" />
-              <span>บันทึกยอดผู้ป่วยใหม่</span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* High-Density Data Table */
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600">
-                <th className="py-3 pl-5 pr-3 whitespace-nowrap">วันที่รายงาน</th>
-                <th className="py-3 px-3 whitespace-nowrap">เวร</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ผู้ป่วยทั้งหมด / เตียง</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ครองเตียง</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">เตียงว่าง</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">รับใหม่</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">จำหน่าย</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ส่งต่อ</th>
-                <th
-                  className="py-3 px-3 text-right whitespace-nowrap"
-                  title="จำแนกประเภทผู้ป่วย 1 / 2 / 3 / 4 / 5"
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{formatThaiDate(record.date)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {SHIFT_META[record.shift].label} ·{" "}
+                    {SHIFT_META[record.shift].timeRange}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={
+                    rate >= 95
+                      ? "border-destructive/30 bg-destructive/10 text-destructive-strong"
+                      : rate >= 80
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-accent bg-secondary text-primary"
+                  }
                 >
-                  ประเภท 1 · 2 · 3 · 4 · 5
-                </th>
-                <th className="py-3 px-3 whitespace-nowrap">หมายเหตุ / แก้ไขล่าสุด</th>
-                <th className="py-3 pl-3 pr-5 text-right whitespace-nowrap">การจัดการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 text-xs">
-              {filteredRecords.map((r) => {
-                const occRate = calculateOccupancyRate(r.totalPatients, r.capacity);
-                const occStatus = getOccupancyStatus(r.totalPatients, r.capacity);
-                const isConfirmingDelete = confirmDeleteId === r.id;
-                const isCopied = copiedId === r.id;
-
-                return (
-                  <tr
-                    key={r.id}
-                    className="hover:bg-slate-50/90 transition-colors group"
-                  >
-                    {/* Date */}
-                    <td className="py-2.5 pl-5 pr-3 whitespace-nowrap">
-                      <div className="font-medium text-slate-900">
-                        {formatThaiDate(r.date)}
-                      </div>
-                      <div className="text-[11px] font-mono tabular-nums text-slate-400">
-                        {r.date}
-                      </div>
-                    </td>
-
-                    {/* Shift */}
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      <div className="font-semibold text-slate-800">
-                        {SHIFT_META[r.shift]?.label || `เวร${r.shift}`}
-                      </div>
-                      <div className="text-[11px] font-mono tabular-nums text-slate-400">
-                        {SHIFT_META[r.shift]?.timeRange}
-                      </div>
-                    </td>
-
-                    {/* Total Patients / Capacity */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-sm font-bold text-slate-900">
-                        {r.totalPatients}
-                      </span>
-                      <span className="text-slate-400"> / {r.capacity}</span>
-                    </td>
-
-                    {/* Occupancy Rate */}
-                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                      <div
-                        className={`font-mono tabular-nums font-semibold ${
-                          occStatus.level === 'critical'
-                            ? 'text-red-600'
-                            : occStatus.level === 'warning'
-                            ? 'text-amber-600'
-                            : 'text-teal-700'
-                        }`}
-                      >
-                        {occRate.toFixed(1)}%
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        {occStatus.label}
-                      </div>
-                    </td>
-
-                    {/* Available Beds */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                      <span
-                        className={`font-semibold ${
-                          r.availableBeds === 0 ? 'text-red-600' : 'text-slate-800'
-                        }`}
-                      >
-                        {r.availableBeds}
-                      </span>
-                      <span className="text-slate-400 ml-1">เตียง</span>
-                    </td>
-
-                    {/* New Patients */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                      <span
-                        className={
-                          r.newPatients > 0
-                            ? 'font-semibold text-teal-700'
-                            : 'text-slate-400'
-                        }
-                      >
-                        {r.newPatients > 0 ? `+${r.newPatients}` : '0'}
-                      </span>
-                    </td>
-
-                    {/* Discharges */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                      <span
-                        className={
-                          r.discharges > 0
-                            ? 'font-semibold text-slate-800'
-                            : 'text-slate-400'
-                        }
-                      >
-                        {r.discharges > 0 ? `-${r.discharges}` : '0'}
-                      </span>
-                    </td>
-
-                    {/* Referrals */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                      <span
-                        className={
-                          r.referrals > 0
-                            ? 'font-semibold text-amber-700'
-                            : 'text-slate-400'
-                        }
-                      >
-                        {r.referrals}
-                      </span>
-                    </td>
-
-                    {/* Categories 1-5 (1=อาการน้อยสุด -> 5=วิกฤต) */}
-                    <td
-                      className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap text-slate-700"
-                      title={`ป.1(น้อยสุด)=${r.cat1}, ป.2(น้อย)=${r.cat2}, ป.3(ปานกลาง)=${r.cat3}, ป.4(กึ่งวิกฤต)=${r.cat4}, ป.5(วิกฤต)=${r.cat5}`}
+                  {rate.toFixed(1)}%
+                </Badge>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <span className="text-muted-foreground">
+                  ผู้ป่วย{" "}
+                  <strong className="font-mono text-foreground">
+                    {record.totalPatients}
+                  </strong>{" "}
+                  ราย
+                </span>
+                <span className="text-muted-foreground">
+                  เตียงว่าง{" "}
+                  <strong className="font-mono text-foreground">
+                    {record.availableBeds}
+                  </strong>
+                </span>
+                <span className="text-muted-foreground">
+                  รับใหม่{" "}
+                  <strong className="font-mono text-foreground">
+                    +{record.newPatients}
+                  </strong>
+                </span>
+                <span className="text-muted-foreground">
+                  จำหน่าย{" "}
+                  <strong className="font-mono text-foreground">
+                    −{record.discharges}
+                  </strong>
+                </span>
+              </div>
+              <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11"
+                  onClick={() => onOpenLineGenerator(record)}
+                >
+                  <MessageSquareText />
+                  LINE
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11"
+                  onClick={() => onEdit(record)}
+                >
+                  <Edit3 />
+                  แก้ไข
+                </Button>
+                {canDelete && <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="min-h-11 text-destructive"
                     >
-                      <span className="text-slate-600">{r.cat1}</span>
-                      <span className="text-slate-300 mx-1">·</span>
-                      <span className="text-slate-600">{r.cat2}</span>
-                      <span className="text-slate-300 mx-1">·</span>
-                      <span className="font-medium text-slate-800">{r.cat3}</span>
-                      <span className="text-slate-300 mx-1">·</span>
-                      <span
-                        className={
-                          r.cat4 > 0
-                            ? 'font-semibold text-amber-700'
-                            : 'text-slate-400'
-                        }
+                      <Trash2 />
+                      ลบ
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        ลบรายการรายงานยอดผู้ป่วย?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        รายการ {formatThaiDate(record.date)} ·{" "}
+                        {SHIFT_META[record.shift].label} จะถูกลบจากฐานข้อมูลกลาง
+                        และเรียกคืนไม่ได้
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction
+                        variant="destructive"
+                        onClick={() => onDelete(record.id)}
                       >
-                        {r.cat4}
+                        ลบรายการ
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-background">
+              <TableHead className="pl-5">วันที่ / เวร</TableHead>
+              <TableHead>ผู้ป่วย</TableHead>
+              {!compact && <TableHead>เตียงว่าง</TableHead>}
+              {!compact && <TableHead>การเคลื่อนไหว</TableHead>}
+              <TableHead>ครองเตียง</TableHead>
+              <TableHead className="pr-5 text-right">การทำงาน</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleRecords.map((record) => {
+              const rate = calculateOccupancyRate(
+                record.totalPatients,
+                record.capacity,
+              );
+              return (
+                <TableRow key={record.id}>
+                  <TableCell className="pl-5">
+                    <p className="font-medium text-foreground">
+                      {formatThaiDate(record.date)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {SHIFT_META[record.shift].label} ·{" "}
+                      {SHIFT_META[record.shift].timeRange}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-mono text-base font-semibold tabular-nums">
+                      {record.totalPatients}
+                    </span>
+                    <span className="ml-1 text-xs text-muted-foreground">ราย</span>
+                  </TableCell>
+                  {!compact && (
+                    <TableCell>
+                      <span className="font-mono tabular-nums">
+                        {record.availableBeds}
                       </span>
-                      <span className="text-slate-300 mx-1">·</span>
-                      <span
-                        className={
-                          r.cat5 > 0 ? 'font-bold text-red-600' : 'text-slate-400'
-                        }
+                      <span className="ml-1 text-xs text-muted-foreground">เตียง</span>
+                    </TableCell>
+                  )}
+                  {!compact && (
+                    <TableCell className="font-mono text-xs tabular-nums">
+                      <span className="text-primary">
+                        +{record.newPatients}
+                      </span>
+                      <span className="mx-1 text-muted-foreground">/</span>
+                      <span>−{record.discharges}</span>
+                      <span className="mx-1 text-muted-foreground">/</span>
+                      <span className="text-amber-700">
+                        ส่งต่อ {record.referrals}
+                      </span>
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        rate >= 95
+                          ? "border-destructive/30 bg-destructive/10 text-destructive-strong"
+                          : rate >= 80
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-accent bg-secondary text-primary"
+                      }
+                    >
+                      {rate.toFixed(1)}%
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="pr-5">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-11 text-muted-foreground hover:bg-secondary hover:text-primary"
+                        onClick={() => onOpenLineGenerator(record)}
+                        aria-label={`สร้างข้อความ LINE สำหรับ ${record.date}`}
                       >
-                        {r.cat5}
-                      </span>
-                    </td>
-
-                    {/* Note & UpdatedAt */}
-                    <td className="py-2.5 px-3 max-w-xs">
-                      <div className="text-slate-800 truncate" title={r.note}>
-                        {r.note || <span className="text-slate-400">-</span>}
-                      </div>
-                      <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-                        แก้ไขล่าสุด {formatUpdatedAt(r.updatedAt, true)}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-2.5 pl-3 pr-5 text-right whitespace-nowrap">
-                      {isConfirmingDelete ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
+                        <MessageSquareText />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-11 text-muted-foreground hover:bg-secondary hover:text-primary"
+                        onClick={() => onEdit(record)}
+                        aria-label={`แก้ไขรายการ ${record.date}`}
+                      >
+                        <Edit3 />
+                      </Button>
+                {canDelete && <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
                             type="button"
-                            disabled={deletingId === r.id}
-                            onClick={() => handleConfirmDelete(r.id)}
-                            className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 text-destructive hover:bg-destructive/10"
+                            aria-label={`ลบรายการ ${record.date}`}
                           >
-                            {deletingId === r.id ? 'กำลังลบ...' : 'ยืนยันลบ'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 text-[11px] transition-colors cursor-pointer"
-                          >
-                            ยกเลิก
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLineReport(r)}
-                            title="คัดลอกสรุปยอดเวรลง Clipboard เพื่อส่ง LINE Group"
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
-                          >
-                            {isCopied ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                <span className="text-emerald-700">คัดลอกแล้ว</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3 text-slate-500" />
-                                <span>คัดลอก LINE</span>
-                              </>
-                            )}
-                          </button>
-                          {onOpenLineGenerator && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenLineGenerator(r)}
-                              title="เปิดหน้าต่างปรับแต่งข้อความสรุปส่ง LINE"
-                              className="p-1.5 rounded border border-transparent hover:border-slate-200 hover:bg-slate-100 text-teal-700 transition-colors cursor-pointer"
-                              aria-label="เปิดหน้าต่างปรับแต่งข้อความสรุปส่ง LINE"
+                            <Trash2 />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              ลบรายการรายงานยอดผู้ป่วย?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              รายการ {formatThaiDate(record.date)} ·{" "}
+                              {SHIFT_META[record.shift].label}{" "}
+                              จะถูกลบจากฐานข้อมูลกลาง และเรียกคืนไม่ได้
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                            <AlertDialogAction
+                              variant="destructive"
+                              onClick={() => onDelete(record.id)}
                             >
-                              <MessageSquareText className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onEdit(r)}
-                            title="แก้ไขรายการ"
-                            className="p-1.5 rounded border border-transparent hover:border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                            aria-label="แก้ไขรายการ"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(r.id)}
-                            title="ลบรายการ"
-                            className="p-1.5 rounded border border-transparent hover:border-red-200 hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
-                            aria-label="ลบรายการ"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-
-            {/* Table Footer Summary */}
-            <tfoot className="border-t border-slate-200 bg-slate-50 text-xs font-medium text-slate-700">
-              <tr>
-                <td colSpan={2} className="py-3 pl-5 pr-3">
-                  สรุปจาก {filteredRecords.length} รายการที่แสดงผล
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
-                  เฉลี่ย {filteredTotals.avgTotal} ราย
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums text-teal-700 font-semibold">
-                  เฉลี่ย {filteredTotals.avgOccupancy}%
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-400">
-                  -
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums text-teal-700 font-semibold">
-                  รวม +{filteredTotals.sumNew}
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-800 font-semibold">
-                  รวม -{filteredTotals.sumDischarges}
-                </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums text-amber-700 font-semibold">
-                  รวม {filteredTotals.sumReferrals}
-                </td>
-                <td colSpan={3} className="py-3 pr-5 text-right text-slate-500">
-                  ตึกผู้ป่วยใน โรงพยาบาลองครักษ์
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                              ลบรายการ
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                </AlertDialog>}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {visibleRecords.length === 0 && (
+        <p className="p-10 text-center text-sm text-muted-foreground">
+          ไม่พบรายการตามเงื่อนไขค้นหา
+        </p>
+      )}
+      {!compact && (
+        <div className="flex flex-col gap-3 border-t border-border p-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            แสดง {visibleRecords.length} จาก {filtered.length} รายการ
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+            className="min-h-11 border-input"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={effectivePage <= 1}
+            >
+              ก่อนหน้า
+            </Button>
+            <span className="min-w-16 text-center tabular-nums">
+              {effectivePage} / {pageCount}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+            className="min-h-11 border-input"
+              onClick={() =>
+                setPage((current) => Math.min(pageCount, current + 1))
+              }
+              disabled={effectivePage >= pageCount}
+            >
+              ถัดไป
+            </Button>
+          </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };

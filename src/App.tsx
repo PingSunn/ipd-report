@@ -1,543 +1,729 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+"use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  CheckCircle2,
-  Download,
+  Activity,
+  BarChart3,
+  ClipboardList,
+  Database,
+  FileText,
+  Hospital,
+  History,
+  MessageSquareText,
   Plus,
-  RefreshCw,
-} from 'lucide-react';
-import { CensusAnalytics } from './components/CensusAnalytics';
-import { CensusForm } from './components/CensusFormModal';
-import { CensusRecordsTable } from './components/CensusRecordsTable';
-import { LatestShiftOverview } from './components/LatestShiftOverview';
-import { LineReportGenerator } from './components/LineReportGenerator';
+  Settings,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
+import { Button } from "./components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./components/ui/empty";
+import { Skeleton } from "./components/ui/skeleton";
+import { CensusAnalytics } from "./components/CensusAnalytics";
+import { CensusForm } from "./components/CensusFormModal";
+import { CensusRecordsTable } from "./components/CensusRecordsTable";
+import { LatestShiftOverview } from "./components/LatestShiftOverview";
+import { LineReportGenerator } from "./components/LineReportGenerator";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { AccountControl, useAuth } from "./components/auth/AuthProvider";
+import type { UserRole } from "./services/authService";
 import {
   deleteCensusRecord,
   getCensusRecords,
   saveCensusRecord,
-} from './services/censusService';
-import { CensusRecord, SHIFT_META } from './types/census';
+} from "./services/censusService";
+import { getSettings, type SettingsSnapshot } from "./services/settingsService";
+import { CensusRecord, SHIFT_META } from "./types/census";
 import {
-  exportCensusToCSV,
   formatThaiDate,
   formatUpdatedAt,
-  getLatestModifiedRecord,
   getTodayDateString,
-} from './utils/censusUtils';
+} from "./utils/censusUtils";
+import type { SharedReportSettings } from "./utils/censusUtils";
 
-type ActiveTab = 'overview' | 'entry' | 'line' | 'history' | 'analytics';
+type ActiveTab = "overview" | "entry" | "line" | "history" | "analytics" | "settings";
+type Notice = { type: "success" | "error"; message: string };
+const navItems: Array<{
+  id: ActiveTab;
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  wardHeadOnly?: boolean;
+}> = [
+  { id: "overview", label: "ภาพรวม", href: "/", icon: Activity },
+  { id: "entry", label: "บันทึกยอดเวร", href: "/entry", icon: ClipboardList },
+  { id: "line", label: "ส่ง LINE", href: "/line", icon: MessageSquareText },
+  { id: "history", label: "ประวัติ", href: "/history", icon: History },
+  { id: "analytics", label: "วิเคราะห์", href: "/analytics", icon: BarChart3, wardHeadOnly: true },
+];
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
+}
+function routeToTab(pathname: string): ActiveTab {
+  if (pathname === "/entry") return "entry";
+  if (pathname === "/line") return "line";
+  if (pathname === "/history") return "history";
+  if (pathname === "/analytics") return "analytics";
+  if (pathname === "/settings") return "settings";
+  return "overview";
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const { user } = useAuth();
+  const role: UserRole = user?.role ?? "NURSE";
+  const isWardHead = role === "WARD_HEAD";
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = routeToTab(pathname || "/");
+  const visibleNavItems = navItems.filter((item) => !item.wardHeadOnly || isWardHead);
+  const mobileNavItems: typeof navItems = isWardHead
+    ? [...visibleNavItems, { id: "settings", label: "ตั้งค่า", href: "/settings", icon: Settings }]
+    : visibleNavItems;
+  const requestedRecordId = searchParams.get("id");
   const [records, setRecords] = useState<CensusRecord[]>([]);
-  const [selectedOverviewRecord, setSelectedOverviewRecord] = useState<CensusRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<CensusRecord | null>(
+    null,
+  );
   const [editingRecord, setEditingRecord] = useState<CensusRecord | null>(null);
-  const [lineModalRecord, setLineModalRecord] = useState<CensusRecord | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string>(new Date().toISOString());
-  const [notification, setNotification] = useState<{
-    type: 'success' | 'error';
-    message: string;
-  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [todayDate, setTodayDate] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
 
-  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification((prev) => (prev?.message === message ? null : prev));
-    }, 3500);
-  }, []);
+  const showNotice = useCallback(
+    (message: string, type: Notice["type"] = "success") => {
+      setNotice({ message, type });
+      window.setTimeout(
+        () =>
+          setNotice((current) =>
+            current?.message === message ? null : current,
+          ),
+        3800,
+      );
+    },
+    [],
+  );
 
   const loadRecords = useCallback(
     async (silent = false) => {
-      if (!silent) {
-        setIsLoading(true);
-      } else {
-        setIsSyncing(true);
-      }
+      if (silent) setIsSyncing(true);
+      else setIsLoading(true);
       try {
         const result = await getCensusRecords();
+        setLoadError(null);
         setRecords(result.records);
         setLastSyncedAt(result.syncedAt);
-        if (result.records.length > 0) {
-          setSelectedOverviewRecord((prev) => {
-            if (!prev) return result.records[0];
-            const updated = result.records.find((r) => r.id === prev.id);
-            return updated || result.records[0];
-          });
-        } else {
-          setSelectedOverviewRecord(null);
-        }
-      } catch (err: any) {
+        setSelectedRecord((current) => {
+          if (!current) return result.records[0] || null;
+          return (
+            result.records.find((record) => record.id === current.id) ||
+            result.records[0] ||
+            null
+          );
+        });
+      } catch (error: unknown) {
         if (!silent) {
-          showToast(err?.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+          const message = getErrorMessage(error);
+          setLoadError(message);
+          showNotice(message, "error");
         }
       } finally {
-        if (!silent) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
         setIsSyncing(false);
       }
     },
-    [showToast]
+    [showNotice],
   );
 
-  // Initial load + automatic background polling every 10 seconds + window focus sync
+  const loadSettings = useCallback(async (silent = false) => {
+    if (!silent) setIsSettingsLoading(true);
+    try {
+      const snapshot = await getSettings();
+      setSettingsSnapshot(snapshot);
+      setSettingsError(null);
+    } catch (error: unknown) {
+      if (!silent) setSettingsError(getErrorMessage(error));
+    } finally {
+      if (!silent) setIsSettingsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    loadRecords(false);
+    if (!isWardHead && (activeTab === "analytics" || activeTab === "settings")) {
+      router.replace("/");
+    }
+  }, [activeTab, isWardHead, router]);
 
+  useEffect(() => {
+    setTodayDate(getTodayDateString());
+    void loadRecords();
+    void loadSettings();
     const intervalId = window.setInterval(() => {
-      loadRecords(true);
+      void loadRecords(true);
+      void loadSettings(true);
     }, 10000);
-
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        loadRecords(true);
+    const syncOnFocus = () => {
+      if (document.visibilityState === "visible") {
+        void loadRecords(true);
+        void loadSettings(true);
       }
     };
-
-    window.addEventListener('focus', handleVisibilityOrFocus);
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-
+    window.addEventListener("focus", syncOnFocus);
+    document.addEventListener("visibilitychange", syncOnFocus);
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener("focus", syncOnFocus);
+      document.removeEventListener("visibilitychange", syncOnFocus);
     };
-  }, [loadRecords]);
+  }, [loadRecords, loadSettings]);
 
-  const latestModifiedRecord = useMemo(
-    () => getLatestModifiedRecord(records),
-    [records]
-  );
+  useEffect(() => {
+    if (!requestedRecordId || !records.length) return;
+    const requested = records.find((record) => record.id === requestedRecordId);
+    if (!requested) return;
+    setSelectedRecord(requested);
+    if (activeTab === "entry") setEditingRecord(requested);
+  }, [activeTab, records, requestedRecordId]);
 
+  const activeLineRecord = selectedRecord || records[0] || null;
+  const reportSettings: SharedReportSettings | undefined = settingsSnapshot
+    ? {
+        hospitalName: settingsSnapshot.settings.hospitalName,
+        wardName: settingsSnapshot.settings.wardName,
+        reportFormat: settingsSnapshot.settings.reportFormat,
+        includeCapacityAndOccupancy: settingsSnapshot.settings.includeCapacityAndOccupancy,
+        includeCategories: settingsSnapshot.settings.includeCategories,
+        includeWorkloadHours: settingsSnapshot.settings.includeWorkloadHours,
+        includeNote: settingsSnapshot.settings.includeNote,
+      }
+    : undefined;
   const handleSaveRecord = async (record: CensusRecord) => {
     setIsSubmitting(true);
     try {
-      const res = await saveCensusRecord(record);
-      if (res.success) {
-        await loadRecords(true);
-        const saved = res.record || record;
-        setSelectedOverviewRecord(saved);
-        setIsModalOpen(false);
-        setEditingRecord(null);
-        if (activeTab === 'entry') {
-          setActiveTab('overview');
-        }
-        showToast(
-          `${res.message || 'บันทึกสำเร็จ'} · อัปเดตข้อมูลวันที่ ${formatThaiDate(
-            saved.date
-          )} (เวร${saved.shift}) ล่าสุดเรียบร้อยแล้ว`
+      const response = await saveCensusRecord(record);
+      if (!response.success) {
+        showNotice(
+          response.error || "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง",
+          "error",
         );
-      } else {
-        showToast(res.error || 'ไม่สามารถบันทึกข้อมูลได้', 'error');
+        return;
       }
+      const saved = response.record || record;
+      await loadRecords(true);
+      setSelectedRecord(saved);
+      setEditingRecord(null);
+      router.push("/");
+      showNotice(
+        `${response.message || "บันทึกสำเร็จ"} · ${formatThaiDate(saved.date)} ${SHIFT_META[saved.shift].label}`,
+      );
+    } catch (error: unknown) {
+      showNotice(getErrorMessage(error), "error");
     } finally {
       setIsSubmitting(false);
     }
   };
-
   const handleDeleteRecord = async (id: string) => {
-    const res = await deleteCensusRecord(id);
-    if (res.success) {
+    try {
+      const response = await deleteCensusRecord(id);
+      if (!response.success) {
+        showNotice(response.error || "ไม่สามารถลบรายการได้", "error");
+        return;
+      }
       await loadRecords(true);
-      showToast('ลบรายการรายงานยอดผู้ป่วยเรียบร้อยแล้ว');
-    } else {
-      showToast(res.error || 'ไม่สามารถลบรายการได้', 'error');
+      showNotice("ลบรายการรายงานยอดผู้ป่วยเรียบร้อยแล้ว");
+    } catch (error: unknown) {
+      showNotice(getErrorMessage(error), "error");
     }
   };
-
-  const handleOpenCreateModal = () => {
-    setEditingRecord(null);
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEditModal = (record: CensusRecord) => {
+  const handleEdit = (record: CensusRecord) => {
     setEditingRecord(record);
-    setIsModalOpen(true);
+    router.push(`/entry?id=${encodeURIComponent(record.id)}`);
   };
-
-  const navItems: Array<{ id: ActiveTab; label: string }> = [
-    { id: 'overview', label: 'ภาพรวมยอดผู้ป่วย' },
-    { id: 'entry', label: 'บันทึกยอดเวร' },
-    { id: 'line', label: 'สรุปส่ง LINE' },
-    { id: 'history', label: 'ตารางประวัติ' },
-    { id: 'analytics', label: 'วิเคราะห์แนวโน้ม' },
-  ];
-
-  const activeLineRecord = selectedOverviewRecord || records[0] || null;
+  const handleCreate = () => {
+    setEditingRecord(null);
+    router.push("/entry");
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Strict 3-Zone Top Bar Contract */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 sm:px-8 h-14 flex items-center justify-between gap-4">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="#overview"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('overview');
-          }}
-          className="text-base sm:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap truncate"
+    <div className="min-h-screen bg-background text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-border bg-card text-foreground lg:flex lg:flex-col">
+        <div className="flex h-24 items-center gap-3 border-b border-border px-7">
+          <div className="grid size-10 place-items-center rounded-xl bg-brand-cyan text-brand-navy-strong shadow-sm">
+            <Hospital className="size-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight">{settingsSnapshot?.settings.wardName || "ตึกผู้ป่วยใน"}</p>
+            <p className="truncate text-xs text-muted-foreground">{settingsSnapshot?.settings.hospitalName || "โรงพยาบาลองครักษ์"}</p>
+          </div>
+        </div>
+        <nav
+          className="flex flex-1 flex-col gap-1 px-4 py-8"
+          aria-label="เมนูหลัก"
         >
-          โรงพยาบาลองครักษ์ · ตึกผู้ป่วยใน
-        </a>
-
-        {/* Zone 2: 5 clean text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
-          {navItems.map((item) => {
-            const isActive = activeTab === item.id;
+          <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            จัดการเวร
+          </p>
+          {visibleNavItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
             return (
-              <button
+              <Link
                 key={item.id}
-                type="button"
-                onClick={() => {
-                  if (item.id === 'entry') {
-                    setEditingRecord(null);
-                  }
-                  setActiveTab(item.id);
-                }}
-                className={`py-4 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                  isActive
-                    ? 'border-teal-600 text-teal-700 font-semibold'
-                    : 'border-transparent hover:text-slate-900 hover:border-slate-300'
-                }`}
+                href={item.href}
+                onClick={() => item.id === "entry" && setEditingRecord(null)}
+                className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                aria-current={active ? "page" : undefined}
               >
-                {item.label}
-              </button>
+                <Icon className="size-4" />
+                <span>{item.label}</span>
+                {active && (
+                  <span className="ml-auto size-1.5 rounded-full bg-brand-emerald" />
+                )}
+              </Link>
             );
           })}
+          {isWardHead && <Link
+            href="/settings"
+            className={`mt-4 flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium ${activeTab === "settings" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+            aria-current={activeTab === "settings" ? "page" : undefined}
+          >
+            <Settings className="size-4" />
+            <span>ตั้งค่า</span>
+            {activeTab === "settings" && <span className="ml-auto size-1.5 rounded-full bg-brand-emerald" />}
+          </Link>}
         </nav>
-
-        {/* Zone 3: 2 primary actions */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => exportCensusToCSV(records)}
-            disabled={records.length === 0}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>ส่งออก CSV</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>บันทึกยอดผู้ป่วย</span>
-          </button>
+        <div className="border-t border-border px-7 py-5 text-xs text-muted-foreground">
+          <p>{settingsSnapshot?.settings.wardName || "IPD Census"}</p>
+          <p className="mt-1">ข้อมูลใช้ร่วมกันจากฐานข้อมูลกลาง</p>
+          {isWardHead && <Link href="/settings" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-brand-cyan-strong hover:underline">
+            <Settings className="size-4" /> ตั้งค่าระบบ
+          </Link>}
+        </div>
+      </aside>
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur lg:ml-64 lg:px-10">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="min-w-0 lg:hidden">
+            <p className="truncate text-sm font-semibold">{settingsSnapshot?.settings.wardName || "ตึกผู้ป่วยใน"}</p>
+            <p className="hidden truncate text-xs text-muted-foreground min-[360px]:block">{settingsSnapshot?.settings.hospitalName || "โรงพยาบาลองครักษ์"}</p>
+          </div>
+          <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
+            <Database className="size-4" />
+            <span>ระบบบันทึกยอดผู้ป่วย</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <AccountControl />
         </div>
       </header>
-
-      {/* Mobile Navigation Strip */}
-      <div className="md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto">
-        {navItems.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                if (item.id === 'entry') {
-                  setEditingRecord(null);
-                }
-                setActiveTab(item.id);
-              }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                isActive
-                  ? 'bg-teal-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main Content Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
-        {/* Contextual Page Header & Live Sync Indicator */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-5 border-b border-slate-200">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>ตึกผู้ป่วยใน (Inpatient Department)</span>
-              <span aria-hidden="true">·</span>
-              <span>ประจำวันที่ {formatThaiDate(getTodayDateString(0), true)}</span>
-              <span aria-hidden="true">·</span>
-              <span className="font-mono tabular-nums">
-                บันทึกแล้ว {records.length} เวร
-              </span>
-              {latestModifiedRecord && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-teal-700 font-medium font-mono tabular-nums">
-                    แก้ไขล่าสุดเมื่อ {formatUpdatedAt(latestModifiedRecord.updatedAt, true)} (
-                    {formatThaiDate(latestModifiedRecord.date)}{' '}
-                    {SHIFT_META[latestModifiedRecord.shift]?.label})
-                  </span>
-                </>
-              )}
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              รายงานยอดผู้ป่วย - ตึกผู้ป่วยใน โรงพยาบาลองครักษ์
+      <main className="mx-auto max-w-[1500px] px-4 pb-24 pt-7 lg:ml-64 lg:px-10 lg:pb-12">
+        {activeTab !== "settings" && <div className="mb-8 flex flex-col justify-between gap-5 border-b border-border pb-6 sm:flex-row sm:items-end">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              รายงานยอดผู้ป่วยประจำเวร
             </h1>
+            <p className="mt-2 text-sm font-medium text-muted-foreground">
+              {(settingsSnapshot?.settings.wardName || "ตึกผู้ป่วยใน")} · ประจำวันที่{" "}
+              {todayDate ? formatThaiDate(todayDate, true) : "กำลังโหลดวันที่…"}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              บันทึกข้อมูลเพื่อส่งต่อการดูแลในเวรถัดไป
+            </p>
           </div>
-
-          <div className="flex items-center gap-3 self-start sm:self-end">
-            <span className="text-[11px] text-slate-500 font-mono tabular-nums hidden lg:inline">
-              ซิงค์อัตโนมัติ: {formatUpdatedAt(lastSyncedAt, true)}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="hidden sm:inline">
+              {lastSyncedAt
+                ? `ซิงค์ล่าสุด ${formatUpdatedAt(lastSyncedAt, true)}`
+                : "กำลังซิงค์ข้อมูล…"}
             </span>
-            <button
-              type="button"
-              onClick={() => loadRecords(false)}
-              disabled={isLoading || isSyncing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  isLoading || isSyncing ? 'animate-spin text-teal-600' : ''
-                }`}
-              />
-              <span>อัปเดตข้อมูลล่าสุด</span>
-            </button>
+              <span className="rounded-full border border-input bg-card px-2.5 py-1">
+              {records.length} เวร
+            </span>
           </div>
-        </div>
-
-        {/* Notification Toast */}
-        {notification && (
-          <div
-            className={`px-4 py-3 rounded-lg border text-xs font-medium flex items-center justify-between gap-3 ${
-              notification.type === 'error'
-                ? 'bg-red-50 border-red-200 text-red-800'
-                : 'bg-teal-50 border-teal-200 text-teal-900'
-            }`}
+        </div>}
+        {notice && (
+          <Alert
+            variant={notice.type === "error" ? "destructive" : "default"}
+            className={
+              notice.type === "error"
+                ? "mb-6 border-destructive/30 bg-surface-danger text-destructive-strong"
+                : "mb-6 border-brand-emerald/35 bg-surface-emerald text-foreground"
+            }
           >
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
-              <span>{notification.message}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNotification(null)}
-              className="text-slate-500 hover:text-slate-800 text-xs underline cursor-pointer"
-            >
-              ปิด
-            </button>
-          </div>
+            <Activity />
+            <AlertTitle>
+              {notice.type === "error" ? "บันทึกไม่สำเร็จ" : "ดำเนินการแล้ว"}
+            </AlertTitle>
+            <AlertDescription>
+              {notice.message}
+              <button
+                type="button"
+                className="ml-3 underline underline-offset-2"
+                onClick={() => setNotice(null)}
+              >
+                ปิด
+              </button>
+            </AlertDescription>
+          </Alert>
         )}
-
-        {/* Tab 1: Overview (Latest Shift Summary + LINE Summary Generator + Recent Records Table) */}
-        {activeTab === 'overview' && (
-          <div className="space-y-8">
-            <LatestShiftOverview
-              records={records}
-              selectedRecord={selectedOverviewRecord}
-              onSelectRecord={setSelectedOverviewRecord}
-              onEditRecord={handleOpenEditModal}
-              onCreateNew={handleOpenCreateModal}
-              onOpenLineGenerator={(rec) => setLineModalRecord(rec)}
-            />
-
-            {/* Embedded LINE Shift Summary Generator Card */}
-            {activeLineRecord && (
-              <LineReportGenerator
-                record={activeLineRecord}
-                allRecords={records}
-                onSelectRecord={setSelectedOverviewRecord}
-                onCopied={(msg) => showToast(msg)}
+        {(isLoading || isSettingsLoading) && activeTab !== "line" ? (
+          <div className="flex flex-col gap-5">
+            <Skeleton className="h-52 bg-muted" />
+            <Skeleton className="h-36 bg-muted" />
+          </div>
+        ) : loadError && records.length === 0 ? (
+          <Alert
+            variant="destructive"
+            className="border-destructive/30 bg-surface-danger text-destructive-strong"
+          >
+            <Activity />
+            <AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle>
+            <AlertDescription>
+              <span>{loadError}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-3 min-h-11 border-destructive/35 bg-card text-destructive"
+                onClick={() => void loadRecords()}
+              >
+                ลองใหม่
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            {activeTab === "settings" && (
+              <SettingsPanel
+                settings={settingsSnapshot?.settings || null}
+                lineStatus={settingsSnapshot?.lineStatus || null}
+                groups={settingsSnapshot?.groups || []}
+                loadError={settingsError}
+                canManageUsers={isWardHead}
+                onSaved={(saved) => {
+                  setSettingsSnapshot((current) =>
+                    current
+                      ? { ...current, settings: saved }
+                      : {
+                          settings: saved,
+                          lineStatus: {
+                            accessTokenConfigured: false,
+                            webhookSecretConfigured: false,
+                            workerLastSeenAt: null,
+                          },
+                          groups: [],
+                        },
+                  );
+                  showNotice("บันทึกการตั้งค่าเรียบร้อยแล้ว");
+                }}
               />
             )}
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-900">
-                  ตารางรายการบันทึกยอดผู้ป่วยรายเวร
-                </h2>
-                {records.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('analytics')}
-                    className="text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline cursor-pointer"
-                  >
-                    ดูกราฟวิเคราะห์แนวโน้ม →
-                  </button>
-                )}
-              </div>
-              <CensusRecordsTable
-                records={records}
-                isLoading={isLoading}
-                onEdit={handleOpenEditModal}
-                onDelete={handleDeleteRecord}
-                onCreateNew={handleOpenCreateModal}
-                onOpenLineGenerator={(rec) => setLineModalRecord(rec)}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Tab 2: Dedicated Shift Entry Form */}
-        {activeTab === 'entry' && (
-          <div className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8">
-            <div className="mb-6 pb-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-900">
-                {editingRecord
-                  ? 'แก้ไขรายงานยอดผู้ป่วยประจำเวร'
-                  : 'บันทึกยอดผู้ป่วยประจำเวร'}
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                กรอกข้อมูลยอดผู้ป่วยทั้งหมด การรับใหม่ จำหน่าย ส่งต่อ และการจำแนกประเภทผู้ป่วย 1–5 พร้อมคัดลอกข้อความสรุปส่ง LINE Group
-              </p>
-            </div>
-            <CensusForm
-              initialRecord={editingRecord}
-              allRecords={records}
-              onSave={handleSaveRecord}
-              onCancel={() => {
-                setEditingRecord(null);
-                setActiveTab('overview');
-              }}
-              isSubmitting={isSubmitting}
-            />
-          </div>
-        )}
-
-        {/* Tab 3: Dedicated LINE Summary Generator View */}
-        {activeTab === 'line' && (
-          <div className="space-y-6">
-            {activeLineRecord ? (
-              <LineReportGenerator
-                record={activeLineRecord}
-                allRecords={records}
-                onSelectRecord={setSelectedOverviewRecord}
-                onCopied={(msg) => showToast(msg)}
-              />
-            ) : (
-              <div className="p-10 bg-white border border-slate-200 rounded-lg text-center space-y-3">
-                <h2 className="text-base font-semibold text-slate-900">
-                  ยังไม่มีข้อมูลเวรสำหรับสร้างข้อความสรุปส่ง LINE
-                </h2>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  กรุณาบันทึกข้อมูลยอดผู้ป่วยประจำเวรอย่างน้อย 1 รายการ เพื่อสร้างข้อความสรุปยอดผู้ป่วยและคัดลอกส่งใน LINE Group ของตึกผู้ป่วยใน
-                </p>
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateModal}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>บันทึกยอดผู้ป่วยใหม่</span>
-                  </button>
+            {activeTab === "overview" && (
+              <div className="flex flex-col gap-8">
+                <LatestShiftOverview
+                  records={records}
+                  selectedRecord={selectedRecord}
+                  onSelectRecord={setSelectedRecord}
+                  onEditRecord={handleEdit}
+                  onCreateNew={handleCreate}
+                  onOpenLineGenerator={(record) =>
+                    router.push(`/line?id=${encodeURIComponent(record.id)}`)
+                  }
+                  reportSettings={reportSettings}
+                />
+                <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+                  <section>
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold">ประวัติล่าสุด</h2>
+                        <p className="text-sm text-muted-foreground">
+                          รายการเวรที่บันทึกล่าสุด
+                        </p>
+                      </div>
+                      <Link
+                        className="text-sm font-medium text-brand-cyan-strong hover:underline"
+                        href="/history"
+                      >
+                        ดูทั้งหมด
+                      </Link>
+                    </div>
+                    <CensusRecordsTable
+                      records={records.slice(0, 6)}
+                      isLoading={false}
+                      onEdit={handleEdit}
+                      onDelete={handleDeleteRecord}
+                      canDelete={isWardHead}
+                      canExport={isWardHead}
+                      onCreateNew={handleCreate}
+                      onOpenLineGenerator={(record) =>
+                        router.push(`/line?id=${encodeURIComponent(record.id)}`)
+                      }
+                      compact
+                    />
+                  </section>
+                  <aside className="rounded-xl border border-brand-emerald/25 bg-surface-emerald p-5">
+                    <h2 className="text-base font-semibold">ขั้นตอนถัดไป</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      เลือกเวรล่าสุดเพื่อทบทวนตัวเลข
+                      หรือเริ่มบันทึกเวรใหม่เมื่อพร้อม
+                    </p>
+                    <Button
+                      className="mt-5 w-full bg-brand-emerald-strong text-white hover:bg-brand-emerald-strong/90"
+                      onClick={handleCreate}
+                    >
+                      <ClipboardList />
+                      บันทึกยอดเวร
+                    </Button>
+                    <Link
+                      href="/line"
+                      className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-emerald/35 text-sm font-medium text-brand-emerald-strong hover:bg-card"
+                    >
+                      <MessageSquareText className="size-4" />
+                      สร้างข้อความ LINE
+                    </Link>
+                  </aside>
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Tab 4: Full History Table */}
-        {activeTab === 'history' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                ตารางประวัติรายงานยอดผู้ป่วยทั้งหมด
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                ค้นหา กรองตามช่วงเวลาหรือเวรปฏิบัติงาน คัดลอกสรุปเวรส่ง LINE และส่งออกไฟล์ CSV
-              </p>
-            </div>
-            <CensusRecordsTable
-              records={records}
-              isLoading={isLoading}
-              onEdit={handleOpenEditModal}
-              onDelete={handleDeleteRecord}
-              onCreateNew={handleOpenCreateModal}
-              onOpenLineGenerator={(rec) => setLineModalRecord(rec)}
-            />
-          </div>
-        )}
-
-        {/* Tab 5: Analytics & Trends */}
-        {activeTab === 'analytics' && (
-          <CensusAnalytics
-            records={records}
-            onSelectRecord={(rec) => {
-              setSelectedOverviewRecord(rec);
-              setActiveTab('overview');
-            }}
-          />
+            {activeTab === "entry" && (
+              <section className="rounded-xl border border-border bg-card p-5 shadow-[0_8px_24px_rgba(18,59,93,0.08)] sm:p-8">
+                <div className="mb-7 flex items-start justify-between gap-4 border-b border-border pb-5">
+                  <div>
+                    <h2 className="text-2xl font-semibold">
+                      {editingRecord
+                        ? "แก้ไขยอดผู้ป่วยประจำเวร"
+                        : "บันทึกยอดผู้ป่วยประจำเวร"}
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      {editingRecord ? "แก้ไขรายการเดิม · " : ""}
+                      กรอกยอดผู้ป่วย การเคลื่อนไหว และประเภทผู้ป่วย
+                      ระบบจะคำนวณเตียงว่างและภาระงานจากข้อมูลที่กรอก
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-input"
+                    onClick={() => {
+                      setEditingRecord(null);
+                      router.push("/");
+                    }}
+                  >
+                    ยกเลิก
+                  </Button>
+                </div>
+                <CensusForm
+                  key={editingRecord?.id ?? "new"}
+                  initialRecord={editingRecord}
+                  allRecords={records}
+                  onSave={handleSaveRecord}
+                  onCancel={() => {
+                    setEditingRecord(null);
+                    router.push("/");
+                  }}
+                  isSubmitting={isSubmitting}
+                  defaultCapacity={settingsSnapshot?.settings.defaultCapacity}
+                  reportSettings={reportSettings}
+                />
+              </section>
+            )}
+            {activeTab === "line" && (
+              <section className="flex flex-col gap-5">
+                {!settingsSnapshot ? (
+                  isSettingsLoading ? (
+                    <div
+                      className="flex flex-col gap-5"
+                      role="status"
+                      aria-live="polite"
+                      aria-busy="true"
+                    >
+                      <Skeleton className="h-52 bg-muted" />
+                      <p className="text-sm text-muted-foreground">
+                        กำลังโหลดการตั้งค่า…
+                      </p>
+                    </div>
+                  ) : (
+                    <Alert
+                      variant="destructive"
+                      className="border-destructive/30 bg-surface-danger text-destructive-strong"
+                    >
+                      <Activity />
+                      <AlertTitle>โหลดการตั้งค่าไม่สำเร็จ</AlertTitle>
+                      <AlertDescription>
+                        <span>
+                          {settingsError || "ไม่สามารถโหลดการตั้งค่าได้ในขณะนี้"}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="ml-3 min-h-11 border-destructive/35 bg-card text-destructive"
+                          onClick={() => void loadSettings()}
+                        >
+                          ลองใหม่
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )
+                ) : isLoading ? (
+                  <div
+                    className="flex flex-col gap-5"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <Skeleton className="h-52 bg-muted" />
+                    <p className="text-sm text-muted-foreground">
+                      กำลังโหลดข้อมูลเวร…
+                    </p>
+                  </div>
+                ) : loadError && records.length === 0 ? (
+                  <Alert
+                    variant="destructive"
+                    className="border-destructive/30 bg-surface-danger text-destructive-strong"
+                  >
+                    <Activity />
+                    <AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle>
+                    <AlertDescription>
+                      <span>{loadError}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="ml-3 min-h-11 border-destructive/35 bg-card text-destructive"
+                        onClick={() => void loadRecords()}
+                      >
+                        ลองใหม่
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : activeLineRecord ? (
+                  <LineReportGenerator
+                    record={activeLineRecord}
+                    allRecords={records}
+                    onSelectRecord={(record) => {
+                      setSelectedRecord(record);
+                      router.replace(
+                        `/line?id=${encodeURIComponent(record.id)}`,
+                      );
+                    }}
+                    onCopied={showNotice}
+                    reportSettings={reportSettings}
+                  />
+                ) : (
+                  <EmptyState
+                    onCreate={handleCreate}
+                    title="ยังไม่มีรายการสำหรับสร้างข้อความ LINE"
+                    description="บันทึกยอดผู้ป่วยอย่างน้อยหนึ่งเวร แล้วเลือกเวรเพื่อปรับแต่งข้อความส่งต่อ"
+                  />
+                )}
+              </section>
+            )}
+            {activeTab === "history" && (
+              <section>
+                <div className="mb-5">
+                  <h2 className="text-2xl font-semibold">
+                    ประวัติรายงานยอดผู้ป่วย
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    ค้นหา กรอง แก้ไข ลบ หรือส่งออกข้อมูลที่บันทึกไว้
+                  </p>
+                </div>
+                <CensusRecordsTable
+                  records={records}
+                  isLoading={false}
+                  onEdit={handleEdit}
+                  onDelete={handleDeleteRecord}
+                  canDelete={isWardHead}
+                  canExport={isWardHead}
+                  onCreateNew={handleCreate}
+                  onOpenLineGenerator={(record) =>
+                    router.push(`/line?id=${encodeURIComponent(record.id)}`)
+                  }
+                />
+              </section>
+            )}
+            {activeTab === "analytics" && (
+              <CensusAnalytics
+                records={records}
+                onSelectRecord={(record) => {
+                  setSelectedRecord(record);
+                  router.push("/");
+                }}
+              />
+            )}
+          </>
         )}
       </main>
-
-      {/* Quiet Clinical Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-8 mt-12">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
-          <div>
-            ตึกผู้ป่วยใน (Inpatient Department) · โรงพยาบาลองครักษ์ จังหวัดนครนายก
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={handleOpenCreateModal}
-              className="hover:text-slate-800 transition-colors cursor-pointer"
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        aria-label="เมนูด้านล่าง"
+        style={{ gridTemplateColumns: `repeat(${mobileNavItems.length}, minmax(0, 1fr))` }}
+      >
+        {mobileNavItems.map((item) => {
+          const Icon = item.icon;
+          const active = activeTab === item.id;
+          return (
+            <Link
+              key={item.id}
+              href={item.href}
+              onClick={() => item.id === "entry" && setEditingRecord(null)}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs ${active ? "font-semibold text-brand-cyan-strong" : "text-muted-foreground"}`}
+              aria-current={active ? "page" : undefined}
             >
-              บันทึกยอดผู้ป่วยประจำเวร
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => exportCensusToCSV(records)}
-              disabled={records.length === 0}
-              className="hover:text-slate-800 disabled:opacity-50 transition-colors cursor-pointer"
-            >
-              ดาวน์โหลดรายงาน CSV
-            </button>
-          </div>
-        </div>
-      </footer>
-
-      {/* Modal Dialog for Quick Add / Edit Census Record */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[1px] overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6 sm:p-8 my-8">
-            <CensusForm
-              initialRecord={editingRecord}
-              allRecords={records}
-              onSave={handleSaveRecord}
-              onCancel={() => {
-                setIsModalOpen(false);
-                setEditingRecord(null);
-              }}
-              isModal={true}
-              isSubmitting={isSubmitting}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Modal Dialog for LINE Summary Generator */}
-      {lineModalRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[1px] overflow-y-auto">
-          <div className="w-full max-w-4xl my-8">
-            <LineReportGenerator
-              record={lineModalRecord}
-              allRecords={records}
-              onSelectRecord={setLineModalRecord}
-              onClose={() => setLineModalRecord(null)}
-              isModal={true}
-              onCopied={(msg) => showToast(msg)}
-            />
-          </div>
-        </div>
-      )}
+              <Icon className="size-5" />
+              <span>{item.id === "entry" ? "บันทึก" : item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
+  );
+}
+
+function EmptyState({
+  onCreate,
+  title,
+  description,
+}: {
+  onCreate: () => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Empty className="rounded-xl border-border bg-card py-20">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="bg-surface-emerald text-brand-emerald-strong">
+          <FileText />
+        </EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button
+          className="bg-primary text-primary-foreground hover:bg-primary/85"
+          onClick={onCreate}
+        >
+          <Plus />
+          บันทึกเวรแรก
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }

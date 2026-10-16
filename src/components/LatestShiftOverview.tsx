@@ -1,15 +1,25 @@
-import React, { useState } from 'react';
+"use client";
+
+import React, { useMemo, useState } from "react";
 import {
+  ArrowRight,
   Check,
   Copy,
   Edit3,
+  FilePlus2,
   MessageSquareText,
   Plus,
-} from 'lucide-react';
+} from "lucide-react";
+import { Button } from "./ui/button";
 import {
-  CensusRecord,
-  SHIFT_META,
-} from '../types/census';
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./ui/empty";
+import { CensusRecord, SHIFT_META, SHIFT_ORDER } from "../types/census";
 import {
   calculateNursingWorkloadHours,
   calculateOccupancyRate,
@@ -17,9 +27,11 @@ import {
   formatThaiDate,
   formatUpdatedAt,
   generateLineShiftSummary,
+  getLineReportOptions,
   getOccupancyStatus,
-} from '../utils/censusUtils';
-import { PatientCategoryDonutChart } from './PatientCategoryDonutChart';
+  type SharedReportSettings,
+} from "../utils/censusUtils";
+import { PatientCategoryDonutChart } from "./PatientCategoryDonutChart";
 
 interface LatestShiftOverviewProps {
   records: CensusRecord[];
@@ -28,6 +40,7 @@ interface LatestShiftOverviewProps {
   onEditRecord: (record: CensusRecord) => void;
   onCreateNew: () => void;
   onOpenLineGenerator?: (record: CensusRecord) => void;
+  reportSettings?: SharedReportSettings;
 }
 
 export const LatestShiftOverview: React.FC<LatestShiftOverviewProps> = ({
@@ -37,382 +50,301 @@ export const LatestShiftOverview: React.FC<LatestShiftOverviewProps> = ({
   onEditRecord,
   onCreateNew,
   onOpenLineGenerator,
+  reportSettings,
 }) => {
-  const [copiedSummary, setCopiedSummary] = useState(false);
-
+  const [copied, setCopied] = useState(false);
   const active = selectedRecord || records[0] || null;
+  const recentShiftGroups = useMemo(() => {
+    const groups = new Map<string, CensusRecord[]>();
+    const recentRecords = records.slice(0, 8);
 
-  if (!active) {
+    if (active && !recentRecords.some((record) => record.id === active.id)) {
+      recentRecords.splice(7, 1, active);
+    }
+
+    for (const record of recentRecords) {
+      const group = groups.get(record.date);
+      if (group) {
+        group.push(record);
+      } else {
+        groups.set(record.date, [record]);
+      }
+    }
+
+    return Array.from(groups, ([date, groupRecords]) => ({
+      date,
+      records: [...groupRecords].sort(
+        (a, b) => SHIFT_ORDER[a.shift] - SHIFT_ORDER[b.shift],
+      ),
+    }));
+  }, [active, records]);
+  const categoryCounts = useMemo(
+    () =>
+      active
+        ? {
+            cat1: active.cat1,
+            cat2: active.cat2,
+            cat3: active.cat3,
+            cat4: active.cat4,
+            cat5: active.cat5,
+          }
+        : { cat1: 0, cat2: 0, cat3: 0, cat4: 0, cat5: 0 },
+    [active],
+  );
+  if (!active)
     return (
-      <div className="p-10 bg-white border border-slate-200 rounded-lg text-center space-y-3">
-        <h2 className="text-base font-semibold text-slate-900">
-          ยังไม่มีข้อมูลรายงานยอดผู้ป่วยในระบบ
-        </h2>
-        <p className="text-xs text-slate-500 max-w-md mx-auto">
-          เริ่มต้นบันทึกยอดผู้ป่วยประจำเวรเช้า เวรบ่าย หรือเวรดึกของตึกผู้ป่วยใน โรงพยาบาลองครักษ์ เพื่อแสดงผลกราฟโดนัทสรุปประเภทผู้ป่วย (1 อาการน้อยสุด – 5 วิกฤต) และสร้างข้อความส่ง LINE Group
-        </p>
-        <div className="pt-2">
-          <button
-            type="button"
+      <Empty className="rounded-xl border-border bg-card py-20">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-secondary text-primary">
+            <FilePlus2 />
+          </EmptyMedia>
+          <EmptyTitle>ยังไม่มีข้อมูลรายงานยอดผู้ป่วย</EmptyTitle>
+          <EmptyDescription>
+            เริ่มต้นบันทึกเวรแรกของตึกผู้ป่วยใน
+            ข้อมูลจริงจะปรากฏที่นี่หลังบันทึกสำเร็จจากฐานข้อมูล
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={onCreateNew}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>บันทึกยอดผู้ป่วยเวรแรก</span>
-          </button>
-        </div>
-      </div>
+            <Plus />
+            บันทึกเวรแรก
+          </Button>
+        </EmptyContent>
+      </Empty>
     );
-  }
 
-  const occRate = calculateOccupancyRate(active.totalPatients, active.capacity);
-  const occStatus = getOccupancyStatus(active.totalPatients, active.capacity);
-  const workloadHours = calculateNursingWorkloadHours(active);
-  const recentShifts = records.slice(0, 6);
-
-  const handleCopyLine = async () => {
-    const ok = await copyTextToClipboard(generateLineShiftSummary(active));
+  const occupancyRate = calculateOccupancyRate(
+    active.totalPatients,
+    active.capacity,
+  );
+  const occupancyStatus = getOccupancyStatus(
+    active.totalPatients,
+    active.capacity,
+  );
+  const workload = calculateNursingWorkloadHours(active);
+  const copySummary = async () => {
+    const ok = await copyTextToClipboard(
+      generateLineShiftSummary(active, getLineReportOptions(reportSettings)),
+    );
     if (ok) {
-      setCopiedSummary(true);
-      setTimeout(() => setCopiedSummary(false), 2200);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
     }
   };
-
-  // Build visual bed slots array for the ward bed map (ordered from Cat 5 critical down to Cat 1 minimal)
-  const totalSlots = Math.max(active.capacity, active.totalPatients);
-  const bedSlots: Array<{
-    index: number;
-    status: 'cat5' | 'cat4' | 'cat3' | 'cat2' | 'cat1' | 'occupied' | 'empty';
-  }> = [];
-  let c5 = active.cat5;
-  let c4 = active.cat4;
-  let c3 = active.cat3;
-  let c2 = active.cat2;
-  let c1 = active.cat1;
-  let remOccupied = active.totalPatients;
-
-  for (let i = 1; i <= totalSlots; i++) {
-    if (remOccupied > 0) {
-      remOccupied--;
-      if (c5 > 0) {
-        c5--;
-        bedSlots.push({ index: i, status: 'cat5' });
-      } else if (c4 > 0) {
-        c4--;
-        bedSlots.push({ index: i, status: 'cat4' });
-      } else if (c3 > 0) {
-        c3--;
-        bedSlots.push({ index: i, status: 'cat3' });
-      } else if (c2 > 0) {
-        c2--;
-        bedSlots.push({ index: i, status: 'cat2' });
-      } else if (c1 > 0) {
-        c1--;
-        bedSlots.push({ index: i, status: 'cat1' });
-      } else {
-        bedSlots.push({ index: i, status: 'occupied' });
-      }
-    } else {
-      bedSlots.push({ index: i, status: 'empty' });
-    }
-  }
-
+  const statItems = [
+    {
+      label: "ผู้ป่วยทั้งหมด",
+      value: `${active.totalPatients}`,
+      suffix: ` / ${active.capacity} เตียง`,
+      tone: "text-foreground",
+    },
+    {
+      label: "ครองเตียง",
+      value: `${occupancyRate.toFixed(1)}%`,
+      suffix: occupancyStatus.label,
+      tone:
+        occupancyRate >= 95
+          ? "text-red-700"
+          : occupancyRate >= 80
+            ? "text-amber-700"
+            : "text-primary",
+    },
+    {
+      label: "การเคลื่อนไหว",
+      value: `+${active.newPatients} / −${active.discharges}`,
+      suffix: `ส่งต่อ ${active.referrals}`,
+      tone: "text-foreground",
+    },
+    {
+      label: "ภาระงานโดยประมาณ",
+      value: workload.toFixed(1),
+      suffix: "ชม./วัน",
+      tone: "text-primary",
+    },
+  ];
   return (
-    <div className="bg-white border border-slate-200 rounded-lg">
-      {/* Top Bar of Overview: Recent Shift Selector & Quick Actions */}
-      <div className="px-6 py-4 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>ตึกผู้ป่วยใน (IPD)</span>
-            <span aria-hidden="true">·</span>
-            <span>วันที่ {formatThaiDate(active.date, true)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-semibold text-teal-700">
-              {SHIFT_META[active.shift]?.label} ({SHIFT_META[active.shift]?.timeRange})
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">
-              แก้ไขล่าสุด {formatUpdatedAt(active.updatedAt, true)}
-            </span>
+    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex flex-col gap-5 border-b border-border p-5 sm:p-7">
+        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
+          <div>
+            <h2 className="text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
+              สรุปเวร · {formatThaiDate(active.date, true)}
+              <span className="whitespace-nowrap">
+                {" "}· {SHIFT_META[active.shift].label}
+              </span>
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {reportSettings?.wardName || "ตึกผู้ป่วยใน"} · {reportSettings?.hospitalName || "โรงพยาบาลองครักษ์"} · {" "}
+              {SHIFT_META[active.shift].timeRange} · แก้ไขล่าสุด{" "}
+              {formatUpdatedAt(active.updatedAt, true)}
+            </p>
           </div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            สรุปสถานะยอดผู้ป่วยในและสัดส่วนประเภทผู้ป่วยประจำเวร
-          </h2>
-        </div>
-
-        {/* Interactive Shift Switcher & Actions */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {recentShifts.length > 1 && (
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200 overflow-x-auto max-w-full">
-              {recentShifts.map((r) => {
-                const isSelected = r.id === active.id;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => onSelectRecord(r)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                      isSelected
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="font-mono tabular-nums">
-                      {r.date.slice(8)}/{r.date.slice(5, 7)}
-                    </span>{' '}
-                    <span>{r.shift}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {onOpenLineGenerator && (
-            <button
-              type="button"
-              onClick={() => onOpenLineGenerator(active)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors whitespace-nowrap cursor-pointer"
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-11 border-input"
+              onClick={() => onEditRecord(active)}
             >
-              <MessageSquareText className="w-3.5 h-3.5 text-teal-600" />
-              <span>ปรับแต่งข้อความ LINE</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleCopyLine}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              copiedSummary
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-900 hover:bg-slate-800 text-white'
-            }`}
-          >
-            {copiedSummary ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                <span>คัดลอกลง Clipboard แล้ว</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>คัดลอกส่ง LINE Group</span>
-              </>
+              <Edit3 />
+              แก้ไข
+            </Button>
+            {onOpenLineGenerator && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-11 border-input"
+                onClick={() => onOpenLineGenerator(active)}
+              >
+                <MessageSquareText />
+                ปรับแต่ง LINE
+              </Button>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onEditRecord(active)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors whitespace-nowrap cursor-pointer"
+            <Button
+              size="sm"
+              className={
+                copied
+                  ? "min-h-11 bg-primary text-primary-foreground"
+                  : "min-h-11 bg-primary text-primary-foreground hover:bg-primary/90"
+              }
+              onClick={() => void copySummary()}
+            >
+              {copied ? <Check /> : <Copy />}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกส่ง LINE"}
+            </Button>
+          </div>
+        </div>
+        <div className="border-t border-border pt-4">
+          <div className="mb-3">
+            <h3 id="recent-shifts-heading" className="text-sm font-semibold">
+              เวรล่าสุด
+            </h3>
+            <p id="recent-shifts-description" className="mt-1 text-sm text-muted-foreground">
+              เลือกวันที่และเวรเพื่อทบทวนยอด
+            </p>
+          </div>
+          <div
+            className="flex snap-x gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-3"
+            role="group"
+            aria-labelledby="recent-shifts-heading"
+            aria-describedby="recent-shifts-description"
           >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>แก้ไขเวรนี้</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main 4-Column Metric Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-slate-200 border-b border-slate-200">
-        {/* Metric 1: Total Patients & Capacity */}
-        <div className="p-6 space-y-2">
-          <div className="text-xs font-medium text-slate-500">
-            จำนวนผู้ป่วยทั้งหมดในเวร (Total Patients)
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold font-mono tabular-nums text-slate-900">
-              {active.totalPatients}
-            </span>
-            <span className="text-sm text-slate-500 font-mono tabular-nums">
-              / {active.capacity} เตียง
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-xs pt-1">
-            <span
-              className={`font-mono tabular-nums font-semibold ${
-                occStatus.level === 'critical'
-                  ? 'text-red-600'
-                  : occStatus.level === 'warning'
-                  ? 'text-amber-600'
-                  : 'text-teal-700'
-              }`}
-            >
-              ครองเตียง {occRate.toFixed(1)}%
-            </span>
-            <span aria-hidden="true" className="text-slate-300">
-              ·
-            </span>
-            <span className="text-slate-600">{occStatus.label}</span>
-          </div>
-        </div>
-
-        {/* Metric 2: Available Beds */}
-        <div className="p-6 space-y-2">
-          <div className="text-xs font-medium text-slate-500">
-            เตียงว่างพร้อมรับ (Available Beds)
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span
-              className={`text-3xl font-bold font-mono tabular-nums ${
-                active.availableBeds === 0 ? 'text-red-600' : 'text-teal-700'
-              }`}
-            >
-              {active.availableBeds}
-            </span>
-            <span className="text-sm text-slate-500">เตียงว่าง</span>
-          </div>
-          <div className="text-xs text-slate-500 pt-1">
-            {active.totalPatients > active.capacity
-              ? `เปิดเตียงเสริมเกินศักยภาพ +${active.totalPatients - active.capacity} เตียง`
-              : `รองรับผู้ป่วยรับใหม่ได้อีก ${active.availableBeds} เตียง`}
-          </div>
-        </div>
-
-        {/* Metric 3: Shift Patient Movement */}
-        <div className="p-6 space-y-2">
-          <div className="text-xs font-medium text-slate-500">
-            การเคลื่อนไหวในเวร (รับใหม่ · จำหน่าย · ส่งต่อ)
-          </div>
-          <div className="grid grid-cols-3 gap-2 pt-1 font-mono tabular-nums">
-            <div>
-              <div className="text-2xl font-bold text-teal-700">
-                +{active.newPatients}
-              </div>
-              <div className="text-[11px] font-sans text-slate-500">รับใหม่ (Admit)</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-slate-900">
-                -{active.discharges}
-              </div>
-              <div className="text-[11px] font-sans text-slate-500">จำหน่าย (D/C)</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-amber-700">
-                {active.referrals}
-              </div>
-              <div className="text-[11px] font-sans text-slate-500">ส่งต่อ (Refer)</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 4: High Acuity Patients (Cat 4 & Cat 5) */}
-        <div className="p-6 space-y-2">
-          <div className="text-xs font-medium text-slate-500">
-            ผู้ป่วยเฝ้าระวังสูง (ประเภท 4 และ 5)
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold font-mono tabular-nums text-slate-900">
-              {active.cat4 + active.cat5}
-            </span>
-            <span className="text-sm text-slate-500">
-              ราย (วิกฤต {active.cat5} · กึ่งวิกฤต {active.cat4})
-            </span>
-          </div>
-          <div className="text-xs text-slate-500 pt-1 font-mono tabular-nums">
-            ภาระงานพยาบาลประมาณการ {workloadHours} ชม./วัน
+            {recentShiftGroups.map((group) => {
+              const groupId = `recent-shift-date-${group.date}`;
+              return (
+                <div
+                  key={group.date}
+                  role="group"
+                  aria-labelledby={groupId}
+                  className="w-[min(78vw,18rem)] shrink-0 snap-start rounded-lg border border-border bg-background p-2.5 sm:w-auto"
+                >
+                  <h4 id={groupId} className="px-1.5 pb-2 text-sm font-semibold text-foreground">
+                    {formatThaiDate(group.date, false)}
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    {group.records.map((record) => {
+                      const isSelected = record.id === active.id;
+                      return (
+                        <button
+                          type="button"
+                          key={record.id}
+                          onClick={() => onSelectRecord(record)}
+                          className={`relative flex min-h-11 items-center justify-center rounded-md border px-2 text-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${isSelected ? "border-primary bg-secondary text-foreground" : "border-border bg-card text-muted-foreground hover:border-accent hover:bg-card"}`}
+                          aria-label={`${SHIFT_META[record.shift].label} ${formatThaiDate(record.date, false)}${isSelected ? " เลือกอยู่" : ""}`}
+                          aria-pressed={isSelected}
+                        >
+                          <span className="font-semibold">{SHIFT_META[record.shift].label}</span>
+                          {isSelected && (
+                            <Check
+                              className="absolute right-1.5 size-3.5"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
-
-      {/* Bottom Split: Donut Graph for Categories 1-5 & Visual 30-Bed Ward Map */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
-        {/* Left 7 Cols: Donut Chart for Patient Categories 1-5 */}
-        <div className="lg:col-span-7 p-6 space-y-4">
-          <div className="flex items-center justify-between">
+      <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-4 sm:divide-y-0">
+        {statItems.map((stat) => (
+          <div className="p-5 sm:p-6" key={stat.label}>
+            <p className="text-sm text-muted-foreground">{stat.label}</p>
+            <p
+              className={`mt-2 font-mono text-2xl font-semibold tabular-nums ${stat.tone}`}
+            >
+              {stat.value}
+              <span className="ml-1 text-xs font-sans font-normal text-muted-foreground">
+                {stat.suffix}
+              </span>
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-8 p-5 sm:p-7 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div>
+          <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">
-                กราฟโดนัทแสดงสัดส่วนประเภทผู้ป่วย (1 อาการน้อยสุด – 5 วิกฤต)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                ชี้ที่ส่วนของกราฟหรือรายการด้านขวาเพื่อดูจำนวนและสัดส่วนรายประเภท
+              <h3 className="font-semibold">สัดส่วนประเภทผู้ป่วย</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                รวม {active.totalPatients} รายในเวรนี้
               </p>
             </div>
+            <span className="text-sm text-muted-foreground">
+              {active.availableBeds} เตียงว่าง
+            </span>
           </div>
-
-          <PatientCategoryDonutChart
-            counts={{
-              cat1: active.cat1,
-              cat2: active.cat2,
-              cat3: active.cat3,
-              cat4: active.cat4,
-              cat5: active.cat5,
-            }}
-          />
-
+          <PatientCategoryDonutChart counts={categoryCounts} stacked />
+        </div>
+        <div>
+          <h3 className="font-semibold">การส่งต่อข้อมูลเวร</h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            ใช้ตัวเลขชุดเดียวกันในการทบทวนเวรและสร้างข้อความส่งต่อ
+          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            {[
+              { label: "รับใหม่", value: active.newPatients, detail: "ราย" },
+              { label: "จำหน่าย", value: active.discharges, detail: "ราย" },
+              { label: "ส่งต่อ", value: active.referrals, detail: "ราย" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="rounded-lg border border-border bg-background p-4"
+              >
+                <p className="text-sm text-muted-foreground">{item.label}</p>
+                <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">
+                  {item.value}
+                  <span className="ml-1 text-xs font-sans font-normal text-muted-foreground">
+                    {item.detail}
+                  </span>
+                </p>
+              </div>
+            ))}
+          </div>
           {active.note && (
-            <div className="pt-3 border-t border-slate-100 flex items-start gap-2 text-xs text-slate-700">
-              <span className="font-semibold text-slate-900 shrink-0">หมายเหตุเวร:</span>
-              <span>{active.note}</span>
+            <div className="mt-4 rounded-lg bg-muted p-4">
+              <p className="text-sm font-medium">หมายเหตุ</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                {active.note}
+              </p>
             </div>
           )}
-        </div>
-
-        {/* Right 5 Cols: Visual 30-Bed Ward Occupancy Map */}
-        <div className="lg:col-span-5 p-6 space-y-3 flex flex-col justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">
-                ผังจำลองสถานะเตียงผู้ป่วยใน ({active.capacity} เตียง)
-              </h3>
-              <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                <span>ครองเตียง {active.totalPatients}</span>
-                <span>·</span>
-                <span>ว่าง {active.availableBeds}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-10 gap-1.5 pt-1">
-              {bedSlots.map((slot) => {
-                const colorClass =
-                  slot.status === 'cat5'
-                    ? 'bg-red-600 text-white border-red-700'
-                    : slot.status === 'cat4'
-                    ? 'bg-amber-500 text-white border-amber-600'
-                    : slot.status === 'cat3'
-                    ? 'bg-teal-600 text-white border-teal-700'
-                    : slot.status === 'cat2'
-                    ? 'bg-sky-600 text-white border-sky-700'
-                    : slot.status === 'cat1' || slot.status === 'occupied'
-                    ? 'bg-emerald-600 text-white border-emerald-700'
-                    : 'bg-slate-100 text-slate-400 border-slate-200';
-
-                const statusLabelMap: Record<typeof slot.status, string> = {
-                  cat1: 'ประเภท 1 (อาการน้อยสุด)',
-                  cat2: 'ประเภท 2 (อาการน้อย)',
-                  cat3: 'ประเภท 3 (อาการปานกลาง)',
-                  cat4: 'ประเภท 4 (อาการหนัก/กึ่งวิกฤต)',
-                  cat5: 'ประเภท 5 (วิกฤต/หนักมาก)',
-                  occupied: 'มีผู้ป่วยครองเตียง',
-                  empty: 'เตียงว่าง',
-                };
-
-                return (
-                  <div
-                    key={slot.index}
-                    title={`เตียงที่ ${slot.index}: ${statusLabelMap[slot.status]}`}
-                    className={`h-7 rounded flex items-center justify-center font-mono tabular-nums text-[11px] font-medium border ${colorClass}`}
-                  >
-                    {slot.index}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-3 border-t border-slate-100">
-            <span>สีเขียว: ป.1 (น้อยสุด)</span>
-            <span>·</span>
-            <span>สีฟ้า: ป.2 (น้อย)</span>
-            <span>·</span>
-            <span>สีเขียวน้ำทะเล: ป.3 (ปานกลาง)</span>
-            <span>·</span>
-            <span>สีส้ม: ป.4 (กึ่งวิกฤต)</span>
-            <span>·</span>
-            <span>สีแดง: ป.5 (วิกฤต)</span>
-            <span>·</span>
-            <span>สีเทาอ่อน: เตียงว่าง</span>
-          </div>
+          <button
+            type="button"
+            className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-primary hover:underline"
+            onClick={onCreateNew}
+          >
+            บันทึกเวรถัดไป <ArrowRight className="size-4" />
+          </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 };

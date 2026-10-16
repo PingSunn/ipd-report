@@ -169,6 +169,30 @@ export interface LineReportOptions {
   includeWorkloadHours?: boolean;
   includeNote?: boolean;
   reporterName?: string;
+  hospitalName?: string;
+  wardName?: string;
+}
+
+export interface SharedReportSettings {
+  hospitalName?: string;
+  wardName?: string;
+  reportFormat?: LineReportFormat;
+  includeCapacityAndOccupancy?: boolean;
+  includeCategories?: boolean;
+  includeWorkloadHours?: boolean;
+  includeNote?: boolean;
+}
+
+export function getLineReportOptions(settings?: SharedReportSettings): LineReportOptions {
+  return {
+    format: settings?.reportFormat ?? 'standard',
+    includeCapacityAndOccupancy: settings?.includeCapacityAndOccupancy ?? true,
+    includeCategories: settings?.includeCategories ?? true,
+    includeWorkloadHours: settings?.includeWorkloadHours ?? false,
+    includeNote: settings?.includeNote ?? true,
+    hospitalName: settings?.hospitalName,
+    wardName: settings?.wardName,
+  };
 }
 
 /**
@@ -212,99 +236,48 @@ export function generateLineShiftSummary(
   const format = options?.format ?? 'standard';
   const includeCapacityAndOccupancy = options?.includeCapacityAndOccupancy ?? true;
   const includeCategories = options?.includeCategories ?? true;
-  const includeWorkloadHours = options?.includeWorkloadHours ?? (format === 'detailed');
+  // Detailed reports have always included the workload line. Keep that
+  // invariant even when a caller passes the persisted flag as false.
+  const includeWorkloadHours = format === 'detailed' || options?.includeWorkloadHours === true;
   const includeNote = options?.includeNote ?? true;
-  const reporterName = options?.reporterName?.trim() || '';
 
   const occRate = calculateOccupancyRate(record.totalPatients, record.capacity);
-  const status = getOccupancyStatus(record.totalPatients, record.capacity);
   const shiftInfo = SHIFT_META[record.shift] || { label: `เวร${record.shift}`, timeRange: '' };
-  const extraBeds =
-    record.totalPatients > record.capacity ? record.totalPatients - record.capacity : 0;
   const workloadHours = calculateNursingWorkloadHours(record);
 
-  if (format === 'compact') {
-    const lines = [
-      `สรุปยอดผู้ป่วย ตึกผู้ป่วยใน รพ.องครักษ์`,
-      `วันที่ ${formatThaiDate(record.date, false)} | ${shiftInfo.label} (${shiftInfo.timeRange})`,
-      `• ผู้ป่วยทั้งหมด: ${record.totalPatients} ราย${
-        includeCapacityAndOccupancy
-          ? ` (ว่าง ${record.availableBeds} เตียง · ครองเตียง ${occRate.toFixed(1)}%)`
-          : ''
-      }`,
-      `• รับใหม่: ${record.newPatients} | จำหน่าย: ${record.discharges} | ส่งต่อ: ${record.referrals} ราย`,
-    ];
-    if (includeCategories) {
-      lines.push(
-        `• แยกประเภท 1-5: [ป.1=${record.cat1}] [ป.2=${record.cat2}] [ป.3=${record.cat3}] [ป.4=${record.cat4}] [ป.5=${record.cat5}]`
-      );
-    }
-    if (includeWorkloadHours) {
-      lines.push(`• ภาระงานพยาบาล: ${workloadHours} ชม./วัน`);
-    }
-    if (includeNote && record.note) {
-      lines.push(`• หมายเหตุ: ${record.note}`);
-    }
-    if (reporterName) {
-      lines.push(`• ผู้รายงาน: ${reporterName}`);
-    }
-    return lines.join('\n');
-  }
-
-  const lines: string[] = [
-    `รายงานยอดผู้ป่วยใน โรงพยาบาลองครักษ์`,
-    `หน่วยงาน: ตึกผู้ป่วยใน (IPD)`,
-    `วันที่: ${formatThaiDate(record.date, true)}`,
-    `เวร: ${shiftInfo.label} (${shiftInfo.timeRange})`,
-    `────────────────────`,
-    `สรุปยอดผู้ป่วยและเตียง:`,
-    `• จำนวนผู้ป่วยทั้งหมด: ${record.totalPatients} ราย`,
-  ];
+  // LINE content is intentionally independent from facility and reporter
+  // metadata. Keep the format option for persisted settings compatibility,
+  // while using one predictable, copy-friendly layout for every format.
+  const censusLines = [`ผู้ป่วย ${record.totalPatients} ราย`];
 
   if (includeCapacityAndOccupancy) {
-    lines.push(
-      `• เตียงทั้งหมด: ${record.capacity} เตียง | เตียงว่าง: ${record.availableBeds} เตียง${
-        extraBeds > 0 ? ` (เตียงเสริม +${extraBeds})` : ''
-      }`
-    );
-    lines.push(`• อัตราการครองเตียง: ${occRate.toFixed(1)}% (${status.label})`);
+    censusLines[0] =
+      `ผู้ป่วย ${record.totalPatients} ราย · เตียงทั้งหมด ${record.capacity} · เตียงว่าง ${record.availableBeds} · ครองเตียง ${occRate.toFixed(1)}%`;
   }
 
-  lines.push(
-    `────────────────────`,
-    `การเคลื่อนไหวในเวร:`,
-    `• ผู้ป่วยรับใหม่ (Admit): ${record.newPatients} ราย`,
-    `• จำหน่ายกลับบ้าน (D/C): ${record.discharges} ราย`,
-    `• ส่งต่อรักษา (Refer): ${record.referrals} ราย`
-  );
+  censusLines.push(`รับใหม่ ${record.newPatients} · จำหน่าย ${record.discharges} · ส่งต่อ ${record.referrals}`);
+  const sections: string[] = [
+    `${formatThaiDate(record.date, false)} · ${shiftInfo.label}`,
+    censusLines.join('\n'),
+  ];
 
   if (includeCategories) {
-    lines.push(
-      `────────────────────`,
-      `สรุปแยกประเภทผู้ป่วย (ประเภท 1-5):`,
-      `• ประเภท 1 (อาการน้อยสุด): ${record.cat1} ราย`,
-      `• ประเภท 2 (อาการน้อย): ${record.cat2} ราย`,
-      `• ประเภท 3 (อาการปานกลาง): ${record.cat3} ราย`,
-      `• ประเภท 4 (อาการหนัก/กึ่งวิกฤต): ${record.cat4} ราย`,
-      `• ประเภท 5 (วิกฤต/หนักมาก): ${record.cat5} ราย`
-    );
+    const categoryLines = ['ประเภทผู้ป่วย'];
+    for (const category of PATIENT_CATEGORIES) {
+      categoryLines.push(`${category.label}: ${record[category.key]} ราย`);
+    }
+    sections.push(categoryLines.join('\n'));
   }
 
   if (includeWorkloadHours) {
-    lines.push(`• ภาระงานทางการพยาบาลรวม: ${workloadHours} ชม./วัน`);
+    sections.push(`ภาระงานพยาบาล ${workloadHours} ชม./วัน`);
   }
 
-  if ((includeNote && record.note) || reporterName) {
-    lines.push(`────────────────────`);
-    if (includeNote && record.note) {
-      lines.push(`หมายเหตุเวร: ${record.note}`);
-    }
-    if (reporterName) {
-      lines.push(`ผู้รายงาน: ${reporterName}`);
-    }
+  if (includeNote && record.note) {
+    sections.push(`หมายเหตุ: ${record.note}`);
   }
 
-  return lines.join('\n');
+  return sections.join('\n\n');
 }
 
 /**

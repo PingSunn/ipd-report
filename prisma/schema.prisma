@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  nurse
+  ward_head
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  name               String
+  firstName          String?
+  lastName           String?
+  nickname           String?
+  email              String       @unique
+  emailVerified      Boolean      @default(false)
+  image              String?
+  role               Role         @default(nurse)
+  active             Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  sessions           Session[]
+  accounts           Account[]
+  createdCensus      CensusRecord[] @relation("CensusRecordCreator")
+  updatedCensus      CensusRecord[] @relation("CensusRecordUpdater")
+  settingsUpdates    AppSettings[] @relation("AppSettingsUpdater")
+  createdInvitations Invitation[] @relation("InvitationCreator")
+  acceptedInvitations Invitation[] @relation("InvitationAcceptedUser")
+  auditEntries       AuditLog[]   @relation("AuditActor")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([identifier, value])
+  @@index([expiresAt])
+}
+
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model Invitation {
+  id             String    @id @default(cuid())
+  email          String    @db.VarChar(320)
+  role           Role      @default(nurse)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  acceptedById   String?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String
+  createdBy      User      @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  acceptedBy     User?     @relation("InvitationAcceptedUser", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([email, expiresAt])
+  @@index([acceptedAt, revokedAt])
+  @@index([createdById, createdAt])
+}
+
+model AuditLog {
+  id         String    @id @default(uuid())
+  actorId    String?
+  action     String    @db.VarChar(64)
+  entityType String    @db.VarChar(64)
+  entityId   String?   @db.VarChar(255)
+  before     Json?
+  after      Json?
+  createdAt  DateTime  @default(now())
+  actor      User?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId, createdAt])
+}
+
+model CensusRecord {
+  /// Existing application IDs are arbitrary strings such as REC-20261014-M.
+  id            String   @id @db.Text
+  /// A ward census date without a time-of-day component.
+  date          DateTime @db.Date
+  /// Original ShiftType values are stored unchanged (เช้า, บ่าย, ดึก).
+  shift         String   @db.VarChar(16)
+  totalPatients Int      @default(0)
+  capacity      Int      @default(30)
+  availableBeds Int      @default(0)
+  newPatients   Int      @default(0)
+  discharges    Int      @default(0)
+  referrals     Int      @default(0)
+  cat1          Int      @default(0)
+  cat2          Int      @default(0)
+  cat3          Int      @default(0)
+  cat4          Int      @default(0)
+  cat5          Int      @default(0)
+  note          String   @default("") @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdById   String?
+  updatedById   String?
+  createdBy     User?    @relation("CensusRecordCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?    @relation("CensusRecordUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([date, shift], name: "census_record_date_shift_key")
+  @@index([date], name: "census_record_date_idx")
+  @@index([updatedAt], name: "census_record_updated_at_idx")
+  @@map("census_records")
+}
+
+model AppSettings {
+  id                          String   @id @default("default") @db.VarChar(32)
+  hospitalName                String   @db.VarChar(200)
+  wardName                    String   @db.VarChar(120)
+  defaultCapacity             Int
+  reportFormat                String   @db.VarChar(16)
+  includeCapacityAndOccupancy Boolean
+  includeCategories           Boolean
+  includeWorkloadHours        Boolean
+  includeNote                 Boolean
+  lineEnabled                 Boolean
+  lineGroupId                 String   @default("") @db.VarChar(255)
+  nightSendTime               String   @db.VarChar(5)
+  morningSendTime             String   @db.VarChar(5)
+  afternoonSendTime           String   @db.VarChar(5)
+  updatedAt                   DateTime @updatedAt
+  updatedById                 String?
+  updatedBy                    User?    @relation("AppSettingsUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("app_settings")
+}
+
+model LineWorkerState {
+  id         String    @id @default("default") @db.VarChar(32)
+  lastSeenAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@map("line_worker_state")
+}
+
+model VerifiedLineGroup {
+  groupId   String   @id @db.VarChar(255)
+  firstSeen DateTime
+  lastSeen  DateTime
+
+  @@index([lastSeen], name: "verified_line_group_last_seen_idx")
+  @@map("verified_line_groups")
+}
+
+model LineDelivery {
+  id             String    @id @default(uuid()) @db.Uuid
+  reportDate     DateTime  @db.Date
+  shift          String    @db.VarChar(16)
+  scheduledAt    DateTime
+  kind           String    @db.VarChar(16)
+  status         String    @default("PENDING") @db.VarChar(16)
+  messageText    String    @db.Text
+  groupId        String    @db.VarChar(255)
+  retryKey       String    @unique @default(uuid()) @db.Uuid
+  attempts       Int       @default(0)
+  firstAttemptAt DateTime?
+  nextAttemptAt  DateTime?
+  claimedAt      DateTime?
+  leaseOwner     String?   @db.VarChar(128)
+  acceptedAt     DateTime?
+  lastError      String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([reportDate, shift], name: "line_delivery_report_date_shift_key")
+  @@index([status, nextAttemptAt], name: "line_delivery_status_next_attempt_idx")
+  @@index([reportDate], name: "line_delivery_report_date_idx")
+  @@map("line_deliveries")
+}

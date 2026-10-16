@@ -1,318 +1,284 @@
-import React, { useEffect, useMemo, useState } from 'react';
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  Clipboard,
   Copy,
   MessageSquareText,
   RotateCcw,
-  X,
-} from 'lucide-react';
-import { CensusRecord, SHIFT_META } from '../types/census';
+} from "lucide-react";
+import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
+import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Textarea } from "./ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+import { CensusRecord } from "../types/census";
 import {
   copyTextToClipboard,
-  formatThaiDate,
   generateLineShiftSummary,
+  getLineReportOptions,
   LineReportFormat,
-} from '../utils/censusUtils';
+  type SharedReportSettings,
+} from "../utils/censusUtils";
+import { formatThaiDate, formatUpdatedAt } from "../utils/censusUtils";
 
 interface LineReportGeneratorProps {
   record: CensusRecord;
-  allRecords?: CensusRecord[];
-  onSelectRecord?: (record: CensusRecord) => void;
+  allRecords: CensusRecord[];
+  onSelectRecord: (record: CensusRecord) => void;
+  onCopied?: (message: string) => void;
   onClose?: () => void;
   isModal?: boolean;
-  onCopied?: (msg: string) => void;
+  reportSettings?: SharedReportSettings;
 }
 
 export const LineReportGenerator: React.FC<LineReportGeneratorProps> = ({
   record,
-  allRecords = [],
+  allRecords,
   onSelectRecord,
-  onClose,
-  isModal = false,
   onCopied,
+  reportSettings,
 }) => {
-  const [format, setFormat] = useState<LineReportFormat>('standard');
-  const [includeCapacityAndOccupancy, setIncludeCapacityAndOccupancy] = useState<boolean>(true);
-  const [includeCategories, setIncludeCategories] = useState<boolean>(true);
-  const [includeWorkloadHours, setIncludeWorkloadHours] = useState<boolean>(false);
-  const [includeNote, setIncludeNote] = useState<boolean>(true);
-  const [reporterName, setReporterName] = useState<string>('');
-  const [customText, setCustomText] = useState<string | null>(null);
-  const [copied, setCopied] = useState<boolean>(false);
-
-  const generatedMessage = useMemo(() => {
-    return generateLineShiftSummary(record, {
+  const initialOptions = getLineReportOptions(reportSettings);
+  const [format, setFormat] = useState<LineReportFormat>(initialOptions.format ?? "standard");
+  const [includeCapacity, setIncludeCapacity] = useState(initialOptions.includeCapacityAndOccupancy ?? true);
+  const [includeCategories, setIncludeCategories] = useState(initialOptions.includeCategories ?? true);
+  const [includeWorkload, setIncludeWorkload] = useState(initialOptions.includeWorkloadHours ?? false);
+  const [includeNote, setIncludeNote] = useState(initialOptions.includeNote ?? true);
+  const [text, setText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const detailedFormat = format === "detailed";
+  const generatedText = useMemo(
+    () =>
+      generateLineShiftSummary(record, {
+        format,
+        includeCapacityAndOccupancy: includeCapacity,
+        includeCategories,
+        includeWorkloadHours: detailedFormat || includeWorkload,
+        includeNote,
+        hospitalName: reportSettings?.hospitalName,
+        wardName: reportSettings?.wardName,
+      }),
+    [
       format,
-      includeCapacityAndOccupancy,
+      includeCapacity,
       includeCategories,
-      includeWorkloadHours: format === 'detailed' ? true : includeWorkloadHours,
       includeNote,
-      reporterName,
-    });
-  }, [
-    record,
-    format,
-    includeCapacityAndOccupancy,
-    includeCategories,
-    includeWorkloadHours,
-    includeNote,
-    reporterName,
-  ]);
-
-  // Reset manual edits when underlying record or options change
-  useEffect(() => {
-    setCustomText(null);
-  }, [generatedMessage]);
-
-  const activeText = customText !== null ? customText : generatedMessage;
-
-  const handleCopy = async () => {
-    const ok = await copyTextToClipboard(activeText);
-    if (ok) {
-      setCopied(true);
-      if (onCopied) {
-        onCopied(
-          `คัดลอกข้อความสรุปเวร (${formatThaiDate(record.date)} · ${
-            SHIFT_META[record.shift]?.label || record.shift
-          }) ลงใน Clipboard เรียบร้อยแล้ว`
-        );
-      }
-      setTimeout(() => setCopied(false), 2500);
+      includeWorkload,
+      detailedFormat,
+      record,
+      reportSettings,
+    ],
+  );
+  useEffect(() => setText(generatedText), [generatedText]);
+  const copyReport = async () => {
+    const ok = await copyTextToClipboard(text);
+    if (!ok) {
+      onCopied?.("คัดลอกไม่สำเร็จ กรุณาเลือกข้อความแล้วคัดลอกด้วยตนเอง");
+      return;
     }
+    setCopied(true);
+    onCopied?.("คัดลอกข้อความ LINE ลง Clipboard แล้ว");
+    window.setTimeout(() => setCopied(false), 2200);
   };
-
   return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <MessageSquareText className="w-4 h-4 text-teal-600 shrink-0" />
-            <h3 className="text-base font-semibold text-slate-900">
-              สร้างข้อความสรุปยอดผู้ป่วยรายเวรส่ง LINE Group
-            </h3>
+    <section className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border p-5 sm:p-7">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-semibold">
+              <MessageSquareText className="size-5 text-primary" />
+              สรุปข้อความสำหรับ LINE
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              แก้ไขข้อความได้ก่อนคัดลอก โดยข้อมูลต้นทางยังคงเป็นรายการที่เลือก
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {reportSettings?.wardName || "ตึกผู้ป่วยใน"} · {reportSettings?.hospitalName || "โรงพยาบาลองครักษ์"}
+            </p>
           </div>
-          <p className="text-xs text-slate-500">
-            สรุปข้อมูลประจำวันที่ {formatThaiDate(record.date, true)} ·{' '}
-            {SHIFT_META[record.shift]?.label} ({SHIFT_META[record.shift]?.timeRange}) สำหรับส่งต่อเวรในกลุ่ม LINE ตึกผู้ป่วยใน
-          </p>
+          <div className="text-sm text-muted-foreground">
+            <span>แก้ไขล่าสุด </span>
+            {formatUpdatedAt(record.updatedAt, true)}
+          </div>
         </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {allRecords.length > 1 && onSelectRecord && (
-            <select
+        <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div>
+            <Label htmlFor="line-record">เลือกเวร</Label>
+            <Select
               value={record.id}
-              onChange={(e) => {
-                const found = allRecords.find((r) => r.id === e.target.value);
-                if (found) onSelectRecord(found);
+              onValueChange={(value) => {
+                const next = allRecords.find((item) => item.id === value);
+                if (next) onSelectRecord(next);
               }}
-              aria-label="เลือกเวรที่ต้องการสร้างข้อความสรุป"
-              className="h-8 px-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-600"
             >
-              {allRecords.slice(0, 15).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {formatThaiDate(r.date)} · เวร{r.shift} (ผู้ป่วย {r.totalPatients} ราย)
-                </option>
-              ))}
-            </select>
-          )}
-
-          {isModal && onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-              aria-label="ปิดหน้าต่าง"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+              <SelectTrigger id="line-record" className="mt-2 w-full bg-card">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectGroup>
+                  {allRecords.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {formatThaiDate(item.date)} · {item.shift} · {item.totalPatients} ราย
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-lg border border-border bg-background p-3 text-sm">
+            <p className="font-semibold">
+              {formatThaiDate(record.date, true)} · เวร{record.shift}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {record.totalPatients} ราย · {record.availableBeds} เตียงว่าง
+            </p>
+          </div>
         </div>
       </div>
-
-      {/* Body Grid: Left Options & Quick Data Summary / Right Live Preview & Copy Button */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
-        {/* Left 6 Cols: Format & Content Controls + Key Figures Breakdown */}
-        <div className="lg:col-span-6 p-6 space-y-5">
-          {/* Format Selector */}
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-slate-700">
-              รูปแบบข้อความรายงาน (Report Template)
-            </label>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200">
-              {(
-                [
-                  { id: 'standard', label: 'มาตรฐานหอผู้ป่วย' },
-                  { id: 'compact', label: 'แบบย่อกระชับ' },
-                  { id: 'detailed', label: 'ละเอียด + ภาระงาน' },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setFormat(item.id);
-                    if (item.id === 'detailed') {
-                      setIncludeWorkloadHours(true);
-                    }
-                  }}
-                  className={`py-1.5 px-2.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                    format === item.id
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+      <div className="grid gap-8 p-5 sm:p-7 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-6">
+          <div>
+            <Label>รูปแบบข้อความ</Label>
+            <ToggleGroup
+              type="single"
+              value={format}
+              onValueChange={(value) => {
+                if (value) setFormat(value as LineReportFormat);
+              }}
+              variant="outline"
+              spacing={1}
+              className="mt-2 grid w-full grid-cols-3"
+            >
+              <ToggleGroupItem
+                value="standard"
+                className="min-h-11 px-2 text-xs"
+              >
+                มาตรฐาน
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="compact"
+                className="min-h-11 px-2 text-xs"
+              >
+                กระชับ
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="detailed"
+                className="min-h-11 px-2 text-xs"
+              >
+                ละเอียด
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
-
-          {/* Toggleable Sections */}
-          <div className="space-y-2.5">
-            <div className="text-xs font-semibold text-slate-700">
-              หัวข้อข้อมูลที่ต้องการแสดงในข้อความ
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-700">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeCapacityAndOccupancy}
-                  onChange={(e) => setIncludeCapacityAndOccupancy(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
-                />
-                <span>เตียงว่างและอัตราครองเตียง (%)</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeCategories}
-                  onChange={(e) => setIncludeCategories(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
-                />
-                <span>สรุปแยกประเภทผู้ป่วย 1–5</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={format === 'detailed' ? true : includeWorkloadHours}
-                  disabled={format === 'detailed'}
-                  onChange={(e) => setIncludeWorkloadHours(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
-                />
-                <span>ภาระงานพยาบาล (ชม./วัน)</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeNote}
-                  onChange={(e) => setIncludeNote(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
-                />
-                <span>หมายเหตุเวร ({record.note ? 'มีข้อมูล' : 'ว่าง'})</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Reporter Name Input */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">
-              ชื่อผู้รายงาน / พยาบาลหัวหน้าเวร (ระบุเพิ่มเติมท้ายข้อความ)
-            </label>
-            <input
-              type="text"
-              value={reporterName}
-              onChange={(e) => setReporterName(e.target.value)}
-              placeholder="เช่น พว.กมลวรรณ (หัวหน้าเวรเช้า)..."
-              className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600"
+          <fieldset className="flex flex-col gap-1">
+            <legend className="mb-2 text-sm font-medium">เนื้อหาที่แสดง</legend>
+            <OptionCheckbox
+              id="include-capacity"
+              checked={includeCapacity}
+              onChange={setIncludeCapacity}
+              label="เตียงและอัตราครองเตียง"
             />
-          </div>
-
-          {/* Structured Data Verification Strip */}
-          <div className="pt-3 border-t border-slate-200 space-y-2">
-            <div className="text-xs font-semibold text-slate-700">
-              ข้อมูลสรุปที่จะปรากฏในรายงานเวรนี้:
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono tabular-nums">
-              <div>
-                <div className="text-[11px] font-sans text-slate-500">ผู้ป่วยทั้งหมด</div>
-                <div className="font-bold text-slate-900">{record.totalPatients} ราย</div>
-              </div>
-              <div>
-                <div className="text-[11px] font-sans text-slate-500">รับใหม่ / จำหน่าย / ส่งต่อ</div>
-                <div className="font-semibold text-teal-700">
-                  +{record.newPatients} / -{record.discharges} / {record.referrals}
-                </div>
-              </div>
-              <div className="col-span-2">
-                <div className="text-[11px] font-sans text-slate-500">แยกประเภท 1 · 2 · 3 · 4 · 5</div>
-                <div className="font-semibold text-slate-900">
-                  {record.cat1} · {record.cat2} · {record.cat3} · {record.cat4} · {record.cat5} ราย
-                </div>
-              </div>
-            </div>
-          </div>
+            <OptionCheckbox
+              id="include-categories"
+              checked={includeCategories}
+              onChange={setIncludeCategories}
+              label="ประเภทผู้ป่วย 1–5"
+            />
+            <OptionCheckbox
+              id="include-workload"
+              checked={detailedFormat || includeWorkload}
+              onChange={setIncludeWorkload}
+              disabled={detailedFormat}
+              label="ภาระงานโดยประมาณ"
+            />
+            <OptionCheckbox
+              id="include-note"
+              checked={includeNote}
+              onChange={setIncludeNote}
+              label="หมายเหตุประจำเวร"
+            />
+          </fieldset>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full border-input"
+            onClick={() => setText(generatedText)}
+          >
+            <RotateCcw />
+            คืนค่าข้อความตามรูปแบบ
+          </Button>
         </div>
-
-        {/* Right 6 Cols: Editable LINE Message Preview & Copy to Clipboard CTA */}
-        <div className="lg:col-span-6 p-6 flex flex-col justify-between space-y-4 bg-slate-50/50">
-          <div className="space-y-2 flex-1 flex flex-col">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700">
-                ตัวอย่างข้อความที่จะคัดลอก (สามารถพิมพ์แก้ไขเพิ่มเติมได้โดยตรง)
-              </label>
-              {customText !== null && (
-                <button
-                  type="button"
-                  onClick={() => setCustomText(null)}
-                  className="inline-flex items-center gap-1 text-[11px] text-teal-700 hover:underline cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>คืนค่าข้อความอัตโนมัติ</span>
-                </button>
-              )}
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <Label htmlFor="line-text">ข้อความที่จะแชร์</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                แก้ไขข้อความในช่องนี้ได้โดยตรง
+              </p>
             </div>
-
-            <textarea
-              rows={12}
-              value={activeText}
-              onChange={(e) => setCustomText(e.target.value)}
-              className="w-full flex-1 p-3.5 rounded-lg border border-slate-300 bg-white font-mono text-xs text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-600"
-            />
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
-            <span className="text-[11px] text-slate-500">
-              กดปุ่มคัดลอกเพื่อนำไปวาง (Paste) ในกลุ่ม LINE ของตึกผู้ป่วยในได้ทันที
-            </span>
-
-            <button
+            <Button
               type="button"
-              onClick={handleCopy}
-              className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+              className={
                 copied
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-teal-600 hover:bg-teal-700 text-white'
-              }`}
+                  ? "min-h-11 bg-primary text-primary-foreground"
+                  : "min-h-11 bg-primary text-primary-foreground hover:bg-primary/90"
+              }
+              onClick={() => void copyReport()}
             >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>คัดลอกลง Clipboard แล้ว!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>คัดลอกข้อความส่ง LINE Group</span>
-                </>
-              )}
-            </button>
+              {copied ? <Check /> : <Copy />}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกข้อความ"}
+            </Button>
+          </div>
+          <Textarea
+            id="line-text"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            className="min-h-[420px] resize-y whitespace-pre-wrap font-sans text-sm leading-6"
+          />
+          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <Clipboard className="size-4" />
+            ข้อความนี้ยังไม่ส่งออกจนกว่าจะกดคัดลอก
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
+
+function OptionCheckbox({
+  id,
+  checked,
+  onChange,
+  disabled = false,
+  label,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={`flex min-h-11 items-center gap-3 rounded-md px-2 text-sm text-muted-foreground hover:bg-background ${disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+    >
+      <Checkbox
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
+      {label}
+    </label>
+  );
+}
