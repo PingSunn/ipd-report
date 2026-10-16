@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server';
 import { authErrorResponse, requireWardHead, updateUserMembership } from '../../../../lib/authorization';
 import { isSameOriginMutation } from '../../../../lib/census-validation';
 import { isProfileComplete } from '../../../../lib/user-profile';
+import { RequestBodyTooLargeError, readBoundedBody } from '../../../../lib/bounded-body';
 
 export const runtime = 'nodejs';
+const maxMembershipBodyBytes = 16 * 1024;
 
 const patchSchema = z.object({
   role: z.enum(['nurse', 'ward_head']).optional(),
@@ -19,7 +21,22 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
       return NextResponse.json({ success: false, error: 'คำขอจากต้นทางไม่ถูกต้อง' }, { status: 403 });
     }
     const actor = await requireWardHead();
-    const parsed = patchSchema.safeParse(await request.json());
+    let bodyText: string;
+    try {
+      bodyText = await readBoundedBody(request, maxMembershipBodyBytes);
+    } catch (error: unknown) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return NextResponse.json({ success: false, error: 'คำขอมีขนาดใหญ่เกินไป' }, { status: 413 });
+      }
+      return NextResponse.json({ success: false, error: 'ข้อมูล role หรือ active ไม่ถูกต้อง' }, { status: 400 });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(bodyText) as unknown;
+    } catch {
+      return NextResponse.json({ success: false, error: 'ข้อมูล role หรือ active ไม่ถูกต้อง' }, { status: 400 });
+    }
+    const parsed = patchSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ success: false, error: 'ข้อมูล role หรือ active ไม่ถูกต้อง' }, { status: 400 });
     }

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import {
   RequestBodyTooLargeError,
@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 
 const maxBodyBytes = 1024 * 1024;
 const noStoreHeaders = { 'Cache-Control': 'no-store' };
+const webhookEventMaxAgeMs = 24 * 60 * 60 * 1000;
+const webhookFutureSkewMs = 5 * 60 * 1000;
 
 function jsonResponse(body: unknown, status = 200): NextResponse {
   return NextResponse.json(body, { status, headers: noStoreHeaders });
@@ -64,7 +66,29 @@ export async function POST(request: Request): Promise<NextResponse> {
   const now = new Date();
   try {
     await withLineConfigLock(prisma, async (transaction) => {
-      const leaves = new Set(eventGroups.leaves);
+      const freshEvents = [] as LineWebhookEvent[];
+      for (const event of eventGroups.events) {
+        const existing = await transaction.lineWebhookEvent.findUnique({
+          where: { webhookEventId: event.webhookEventId },
+        });
+        if (existing) continue;
+        await transaction.lineWebhookEvent.create({
+          data: {
+            webhookEventId: event.webhookEventId,
+            eventTimestamp: event.timestamp,
+            redelivered: event.redelivered,
+            receivedAt: now,
+          },
+        });
+        if (isFreshWebhookEvent(event.timestamp, now)) freshEvents.push(event);
+      }
+
+      const leaves = new Set(
+        freshEvents.filter((event) => event.type === 'leave' && event.groupId).map((event) => event.groupId!),
+      );
+      const groups = new Set(
+        freshEvents.filter((event) => event.type !== 'leave' && event.groupId).map((event) => event.groupId!),
+      );
       if (leaves.size > 0) {
         await transaction.verifiedLineGroup.deleteMany({
           where: { groupId: { in: [...leaves] } },
@@ -80,7 +104,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         }
       }
 
-      for (const groupId of eventGroups.groups) {
+      for (const groupId of groups) {
         if (leaves.has(groupId)) continue;
         await transaction.verifiedLineGroup.upsert({
           where: { groupId },
@@ -88,6 +112,9 @@ export async function POST(request: Request): Promise<NextResponse> {
           update: { lastSeen: now },
         });
       }
+      await transaction.lineWebhookEvent.deleteMany({
+        where: { receivedAt: { lt: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000) } },
+      });
     });
     return jsonResponse({ success: true });
   } catch {
@@ -122,6 +149,15 @@ export function parseGroupEvents(value: unknown): string[] | null {
 export interface LineWebhookGroupEvents {
   groups: string[];
   leaves: string[];
+  events: LineWebhookEvent[];
+}
+
+export interface LineWebhookEvent {
+  webhookEventId: string;
+  timestamp: Date | null;
+  redelivered: boolean;
+  type: string;
+  groupId: string | null;
 }
 
 export function parseWebhookEvents(value: unknown): LineWebhookGroupEvents | null {
@@ -131,33 +167,89 @@ export function parseWebhookEvents(value: unknown): LineWebhookGroupEvents | nul
 
   const groups: string[] = [];
   const leaves: string[] = [];
+  const events: LineWebhookEvent[] = [];
   for (const event of value.events) {
     if (!isRecord(event)) return null;
+    const webhookEventId = webhookEventIdFor(event);
+    if (!webhookEventId) return null;
+    if (typeof event.type !== 'string' || event.type.length === 0 || event.type.length > 64) return null;
+    const timestamp = webhookTimestamp(event.timestamp);
+    if ('timestamp' in event && timestamp === undefined) return null;
+    const redelivered = event.deliveryContext === undefined
+      ? false
+      : isRecord(event.deliveryContext) && typeof event.deliveryContext.isRedelivery === 'boolean'
+        ? event.deliveryContext.isRedelivery
+        : null;
+    if (redelivered === null) return null;
     if (!('source' in event)) return null;
     if (!isRecord(event.source)) return null;
     if (event.source.type === 'group') {
       if (typeof event.source.groupId !== 'string' || !isSafeGroupId(event.source.groupId)) {
         return null;
       }
-      if (event.type === 'leave') leaves.push(event.source.groupId);
+      const isLeave = event.type === 'leave';
+      if (isLeave) leaves.push(event.source.groupId);
       else groups.push(event.source.groupId);
+      events.push({
+        webhookEventId,
+        timestamp: timestamp ?? null,
+        redelivered,
+        type: isLeave ? 'leave' : String(event.type ?? ''),
+        groupId: event.source.groupId,
+      });
       continue;
     }
     if (event.source.type === 'user') {
       if (typeof event.source.userId !== 'string' || !isSafeLineSourceId(event.source.userId, 'U')) {
         return null;
       }
+      events.push({ webhookEventId, timestamp: timestamp ?? null, redelivered, type: String(event.type ?? ''), groupId: null });
       continue;
     }
     if (event.source.type === 'room') {
       if (typeof event.source.roomId !== 'string' || !isSafeLineSourceId(event.source.roomId, 'R')) {
         return null;
       }
+      events.push({ webhookEventId, timestamp: timestamp ?? null, redelivered, type: String(event.type ?? ''), groupId: null });
       continue;
     }
     return null;
   }
-  return { groups: [...new Set(groups)], leaves: [...new Set(leaves)] };
+  return {
+    groups: [...new Set(groups)],
+    leaves: [...new Set(leaves)],
+    events: [...new Map(events.map((event) => [event.webhookEventId, event])).values()],
+  };
+}
+
+function webhookEventIdFor(event: Record<string, unknown>): string | null {
+  if ('webhookEventId' in event) {
+    return typeof event.webhookEventId === 'string' && isSafeWebhookEventId(event.webhookEventId)
+      ? event.webhookEventId
+      : null;
+  }
+  // Older local webhook fixtures omitted the provider ID. A deterministic
+  // fallback still gives those payloads idempotent replay protection.
+  const serialized = JSON.stringify(event);
+  if (!serialized) return null;
+  return `legacy-${createHash('sha256').update(serialized).digest('hex')}`;
+}
+
+function isSafeWebhookEventId(value: string): boolean {
+  return value.length > 0 && value.length <= 255 && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function webhookTimestamp(value: unknown): Date | null | undefined {
+  if (value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return undefined;
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? undefined : timestamp;
+}
+
+function isFreshWebhookEvent(timestamp: Date | null, now: Date): boolean {
+  if (!timestamp) return true;
+  const age = now.getTime() - timestamp.getTime();
+  return age <= webhookEventMaxAgeMs && age >= -webhookFutureSkewMs;
 }
 
 function isSafeGroupId(value: string): boolean {

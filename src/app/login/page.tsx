@@ -3,12 +3,13 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 import { AuthMark, GoogleLoginButton, useAuth } from '../../components/auth/AuthProvider';
+import { safeCallbackUrl } from '../../lib/redirect';
 
 function LoginContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
 
   useEffect(() => {
     if (!isLoading && user) router.replace(callbackUrl.startsWith('/') ? callbackUrl : '/');

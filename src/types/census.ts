@@ -21,6 +21,8 @@ export interface CensusRecord {
   cat4: number; // ประเภท 4: อาการหนัก / กึ่งวิกฤต (พึ่งพาสูง / Semi-Critical)
   cat5: number; // ประเภท 5: วิกฤต / หนักมาก (เฝ้าระวังใกล้ชิด / Critical Care)
   note: string;
+  /** Optional operational text explicitly prepared for the configured LINE group. */
+  lineNote?: string;
   updatedAt: string;
   /** Present on records read from the API; omitted from form submissions. */
   createdBy?: CensusAttribution;

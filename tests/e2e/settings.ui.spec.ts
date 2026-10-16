@@ -214,7 +214,7 @@ test.describe('shared settings UI', () => {
       await page.getByRole('checkbox', { name: 'เตียงและอัตราครองเตียง' }).uncheck();
       await page.getByRole('checkbox', { name: 'ประเภทผู้ป่วย 1–5' }).uncheck();
       await page.getByRole('checkbox', { name: 'ภาระงานพยาบาลโดยประมาณ' }).uncheck();
-      await page.getByRole('checkbox', { name: 'หมายเหตุประจำเวร' }).uncheck();
+      await page.getByRole('checkbox', { name: 'หมายเหตุสำหรับ LINE-safe' }).uncheck();
       await page.locator('#line-group-id').fill(uiSettings.lineGroupId);
       await page.locator('#night-time').fill(uiSettings.nightSendTime);
       await page.locator('#morning-time').fill(uiSettings.morningSendTime);
@@ -319,7 +319,7 @@ test.describe('shared settings UI', () => {
       await expect(page.getByRole('radio', { name: 'ละเอียด' })).toBeChecked();
       await expect(page.getByRole('checkbox', { name: 'เตียงและอัตราครองเตียง' })).not.toBeChecked();
       await expect(page.getByRole('checkbox', { name: 'ประเภทผู้ป่วย 1–5' })).not.toBeChecked();
-      await expect(page.getByRole('checkbox', { name: 'หมายเหตุประจำเวร' })).not.toBeChecked();
+      await expect(page.getByRole('checkbox', { name: 'หมายเหตุสำหรับ LINE-safe' })).not.toBeChecked();
       await expect(page.getByRole('checkbox', { name: 'ภาระงานโดยประมาณ' })).toBeChecked();
       await expect(page.getByRole('checkbox', { name: 'ภาระงานโดยประมาณ' })).toBeDisabled();
       await expect(page.locator('#line-text')).toHaveValue(/ภาระงานพยาบาล/);

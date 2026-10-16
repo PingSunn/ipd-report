@@ -34,7 +34,9 @@ Both ward nurses and ward heads use the application. Nurses record and edit shar
 
 Better Auth uses the shared OKR Unit Google OAuth client. Only verified Google
 accounts with an unexpired seven-day invitation may join; the bootstrap ward
-head is `pongsakorn.wera@gmail.com`. Sessions last 14 days, while protected
+head is configured explicitly with `AUTH_BOOTSTRAP_EMAIL`. Provider access,
+refresh, and ID tokens are discarded after Google verifies the sign-in because
+the application does not call Google APIs. Sessions last 14 days, while protected
 requests recheck the user's active status and role. Census and administration
 changes write immutable audit entries with actor and relevant before/after
 state. The signed LINE webhook and direct-database LINE worker remain machine
@@ -62,6 +64,8 @@ destination is configured and the owner enables it. Provider acceptance does
 not prove that individual group members received or read the message.
 
 LINE report bodies use a short reporting-date/shift header, selected census
-figures, and optional note. Hospital, ward, and reporter names, decorative
-dividers, and long section headings are omitted from both copied previews and
-automatic reports. Ward identity remains visible in the application itself.
+figures, and an optional LINE-safe note entered separately from the internal
+census note. The safe note is blank and disabled by default and must exclude
+patient identifiers. Hospital, ward, and reporter names, decorative dividers,
+and long section headings are omitted from both copied previews and automatic
+reports. Ward identity remains visible in the application itself.

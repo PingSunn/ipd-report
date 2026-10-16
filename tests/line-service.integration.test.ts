@@ -160,6 +160,7 @@ integration('LineService PostgreSQL integration', () => {
     const concurrentlyClaimed = await prisma.lineDelivery.findUnique({ where: { id: concurrent.id } });
     expect(firstCalls.length + secondCalls.length).toBe(1);
     expect(concurrentlyClaimed?.status).toBe('ACCEPTED');
+    expect(concurrentlyClaimed?.messageText).toBe('');
 
     const now = new Date('2090-01-07T01:00:00.000Z');
     const stale = await createDelivery({
@@ -179,6 +180,7 @@ integration('LineService PostgreSQL integration', () => {
     expect(recovered?.status).toBe('ACCEPTED');
     expect(recovered?.leaseOwner).toBeNull();
     expect(recovered?.retryKey).toBe(stale.retryKey);
+    expect(recovered?.messageText).toBe('');
   });
 
   it('snapshots a missing notice and does not resend after late census data arrives', async () => {
@@ -190,7 +192,9 @@ integration('LineService PostgreSQL integration', () => {
     const first = await service(now, groupId, calls).tick();
     expect(first.status).toBe('ACCEPTED');
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.messages[0]?.text).toBe('3 ม.ค. 2633 · เวรดึก\nยังไม่มีข้อมูลเวรนี้');
+    expect(calls[0]?.messages[0]?.text).toBe('3 ม.ค. 2633 · เวรดึก\n\nยังไม่มีข้อมูลเวรนี้');
+    const accepted = await prisma.lineDelivery.findUnique({ where: { id: first.deliveryId! } });
+    expect(accepted?.messageText).toBe('');
 
     await createCensus('2090-01-03', 'ดึก', `line-it-census-${crypto.randomUUID()}`);
     const second = await service(new Date(now.getTime() + 60_000), groupId, calls).tick();

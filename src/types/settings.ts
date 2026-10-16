@@ -102,7 +102,8 @@ export const DEFAULT_SETTINGS: SettingsUpdateInput = {
   includeCapacityAndOccupancy: true,
   includeCategories: true,
   includeWorkloadHours: false,
-  includeNote: true,
+  // LINE notes are opt in; internal census notes are never sent.
+  includeNote: false,
   lineEnabled: false,
   lineGroupId: '',
   nightSendTime: '08:00',

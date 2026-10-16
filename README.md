@@ -63,7 +63,7 @@ BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:40273,https://ipd.pskwr.com
 NEXT_PUBLIC_APP_URL=http://localhost:40273
 GOOGLE_CLIENT_ID=<shared OKR Unit client ID>
 GOOGLE_CLIENT_SECRET=<IPD client secret>
-AUTH_BOOTSTRAP_EMAIL=pongsakorn.wera@gmail.com
+AUTH_BOOTSTRAP_EMAIL=<explicit initial ward-head Gmail>
 ```
 
 The shared Google client must allow these redirect URIs:
@@ -146,8 +146,10 @@ when the database starts empty.
 
 ## Runtime configuration
 
-For Supabase, `DATABASE_URL` is the pooled runtime connection and `DIRECT_URL`
-is the direct migration connection. Both are server-only variables. Local
+For Supabase, `DATABASE_URL` is the pooled `ipd_app` runtime connection and
+`DIRECT_URL` is the direct migration-owner connection. Both are server-only
+variables. Provision the runtime role with `bun run db:provision-runtime-role`
+before the first cutover; see [database setup](docs/database.md). Local
 development uses the Docker PostgreSQL service on `127.0.0.1:45432`.
 
 The application ships no raster image assets. Noto Sans Thai is self-hosted

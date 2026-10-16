@@ -1,0 +1,62 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ipd-report-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - ipd-report
+          - ipd-report-worker
+          - ipd-report-migrate
+  policyTypes:
+    - Egress
+  egress:
+    # CoreDNS is addressed by pod and namespace selectors so cluster DNS keeps
+    # working even when the resolver Service IP changes.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Supabase PostgreSQL and the HTTPS Google/LINE APIs are external to the
+    # cluster. Keep the port allowlist narrow; replace the broad CIDRs with
+    # provider CIDRs if a stable egress range is adopted later.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        - ipBlock:
+            cidr: ::/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6543
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ipd-report-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ipd-report
+  policyTypes:
+    - Ingress
+  ingress:
+    # Permit Traefik and kubelet readiness/liveness probes. The Service still
+    # exposes only the named HTTP port to the ingress controller.
+    - ports:
+        - protocol: TCP
+          port: 40000

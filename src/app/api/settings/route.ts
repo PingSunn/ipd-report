@@ -7,6 +7,7 @@ import {
   getAppSettings,
   getLineWorkerState,
   getVerifiedLineGroups,
+  isLineAccessTokenConfigured,
   lineStatus,
   toSettingsDto,
   toVerifiedLineGroupDto,
@@ -124,7 +125,7 @@ export async function PUT(request: Request): Promise<NextResponse> {
     );
   }
 
-  if (parsed.data.lineEnabled && !process.env['LINE_CHANNEL_ACCESS_TOKEN']?.trim()) {
+  if (parsed.data.lineEnabled && !isLineAccessTokenConfigured()) {
     return jsonResponse(
       {
         success: false,
@@ -147,6 +148,16 @@ export async function PUT(request: Request): Promise<NextResponse> {
 
   try {
     const result = await withLineConfigLock(prisma, async (transaction) => {
+      // The session check above can become stale while waiting for the LINE
+      // configuration lock. Re-read the actor under the same transaction that
+      // writes the privileged setting.
+      const currentActor = await transaction.user.findUnique({
+        where: { id: actor.id },
+        select: { active: true, role: true },
+      });
+      if (!currentActor?.active || currentActor.role !== 'ward_head') {
+        return { ok: false as const, authorizationFailed: true as const };
+      }
       if (parsed.data.lineEnabled) {
         const verifiedGroup = await transaction.verifiedLineGroup.findUnique({
           where: { groupId: parsed.data.lineGroupId },
@@ -181,6 +192,9 @@ export async function PUT(request: Request): Promise<NextResponse> {
       });
       return { ok: true as const, settings };
     });
+    if ('authorizationFailed' in result) {
+      return jsonResponse({ success: false, error: 'ต้องใช้สิทธิ์หัวหน้าหอผู้ป่วย' }, 403);
+    }
     if (!result.ok) {
       return jsonResponse(
         {

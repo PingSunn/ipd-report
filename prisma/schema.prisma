@@ -141,6 +141,7 @@ model CensusRecord {
   cat4          Int      @default(0)
   cat5          Int      @default(0)
   note          String   @default("") @db.Text
+  lineNote      String   @default("") @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   createdById   String?
@@ -217,4 +218,14 @@ model LineDelivery {
   @@index([status, nextAttemptAt], name: "line_delivery_status_next_attempt_idx")
   @@index([reportDate], name: "line_delivery_report_date_idx")
   @@map("line_deliveries")
+}
+
+model LineWebhookEvent {
+  webhookEventId String   @id @db.VarChar(255)
+  eventTimestamp DateTime?
+  redelivered    Boolean  @default(false)
+  receivedAt    DateTime @default(now())
+
+  @@index([receivedAt], name: "line_webhook_event_received_at_idx")
+  @@map("line_webhook_events")
 }

@@ -59,6 +59,7 @@ function isCensusRecord(value: unknown): value is CensusRecord {
     typeof value.date === 'string' &&
     isShift(value.shift) &&
     typeof value.note === 'string' &&
+    (value.lineNote === undefined || typeof value.lineNote === 'string') &&
     typeof value.updatedAt === 'string' &&
     requiredNumbers.every(
       (field) => typeof value[field] === 'number' && Number.isFinite(value[field])

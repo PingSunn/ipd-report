@@ -9,3 +9,4 @@ resources:
   - migration-job.yaml
   - infisical-secret.yaml
   - ingress.yaml
+  - network-policy.yaml

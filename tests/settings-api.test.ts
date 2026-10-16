@@ -16,6 +16,8 @@ const { mockPrisma } = vi.hoisted(() => ({
     },
     lineWorkerState: { findUnique: vi.fn() },
     verifiedLineGroup: { findMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
+    lineWebhookEvent: { findUnique: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+    user: { findUnique: vi.fn() },
     lineDelivery: { findMany: vi.fn() },
     auditLog: { create: vi.fn() },
   },
@@ -68,6 +70,10 @@ beforeEach(() => {
   mockPrisma.lineWorkerState.findUnique.mockResolvedValue(null);
   mockPrisma.verifiedLineGroup.findMany.mockResolvedValue([]);
   mockPrisma.verifiedLineGroup.findUnique.mockResolvedValue(null);
+  mockPrisma.lineWebhookEvent.findUnique.mockResolvedValue(null);
+  mockPrisma.lineWebhookEvent.create.mockResolvedValue({});
+  mockPrisma.lineWebhookEvent.deleteMany.mockResolvedValue({ count: 0 });
+  mockPrisma.user.findUnique.mockResolvedValue({ active: true, role: 'ward_head' });
   mockPrisma.appSettings.update.mockResolvedValue(settingsRecord);
   mockPrisma.$executeRaw.mockResolvedValue(0);
   mockPrisma.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
@@ -78,7 +84,7 @@ beforeEach(() => {
 
 describe('settings API', () => {
   it('returns shared report settings without LINE administration details to nurses', async () => {
-    vi.stubEnv('LINE_CHANNEL_ACCESS_TOKEN', 'configured-token');
+    vi.stubEnv('LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED', 'true');
     vi.stubEnv('LINE_CHANNEL_SECRET', 'configured-secret');
 
     const response = await getSettings();
@@ -136,7 +142,7 @@ describe('settings API', () => {
     expect(noToken.status).toBe(400);
     expect((await noToken.json()).fieldErrors.lineEnabled).toContain('token');
 
-    vi.stubEnv('LINE_CHANNEL_ACCESS_TOKEN', 'configured-token');
+    vi.stubEnv('LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED', 'true');
     const noGroup = await putSettings(request('PUT', payload));
     expect(noGroup.status).toBe(400);
     expect((await noGroup.json()).fieldErrors.lineGroupId).toContain('signed webhook');
@@ -228,6 +234,48 @@ describe('LINE webhook', () => {
     expect(mockPrisma.appSettings.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { lineEnabled: false, lineGroupId: '' } })
     );
+    expect(mockPrisma.verifiedLineGroup.upsert).not.toHaveBeenCalled();
+  });
+
+  it('records webhook event IDs and ignores a replay', async () => {
+    vi.stubEnv('LINE_CHANNEL_SECRET', 'configured-secret');
+    const body = JSON.stringify({
+      events: [{
+        webhookEventId: 'evt-replay-1',
+        timestamp: Date.now(),
+        deliveryContext: { isRedelivery: false },
+        type: 'message',
+        source: { type: 'group', groupId: 'Creplay_123' },
+      }],
+    });
+    const first = await postWebhook(signedWebhook(body, 'configured-secret'));
+    expect(first.status).toBe(200);
+    expect(mockPrisma.lineWebhookEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ webhookEventId: 'evt-replay-1', redelivered: false }),
+    }));
+
+    mockPrisma.lineWebhookEvent.findUnique.mockResolvedValue({ webhookEventId: 'evt-replay-1' });
+    mockPrisma.verifiedLineGroup.upsert.mockClear();
+    const replay = await postWebhook(signedWebhook(body, 'configured-secret'));
+    expect(replay.status).toBe(200);
+    expect(mockPrisma.verifiedLineGroup.upsert).not.toHaveBeenCalled();
+  });
+
+  it('persists stale events without applying group changes', async () => {
+    vi.stubEnv('LINE_CHANNEL_SECRET', 'configured-secret');
+    const body = JSON.stringify({
+      events: [{
+        webhookEventId: 'evt-stale-1',
+        timestamp: Date.now() - 25 * 60 * 60 * 1000,
+        type: 'message',
+        source: { type: 'group', groupId: 'Cstale_123' },
+      }],
+    });
+    const response = await postWebhook(signedWebhook(body, 'configured-secret'));
+    expect(response.status).toBe(200);
+    expect(mockPrisma.lineWebhookEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ webhookEventId: 'evt-stale-1' }),
+    }));
     expect(mockPrisma.verifiedLineGroup.upsert).not.toHaveBeenCalled();
   });
 

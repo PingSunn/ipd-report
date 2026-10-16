@@ -383,7 +383,7 @@ export function SettingsPanel({ settings, lineStatus, groups, loadError, onSaved
               <SettingCheckbox id="include-capacity" checked={draft.includeCapacityAndOccupancy} onChange={(value) => update("includeCapacityAndOccupancy", value)} label="เตียงและอัตราครองเตียง" />
               <SettingCheckbox id="include-categories" checked={draft.includeCategories} onChange={(value) => update("includeCategories", value)} label="ประเภทผู้ป่วย 1–5" />
               <SettingCheckbox id="include-workload" checked={draft.includeWorkloadHours} onChange={(value) => update("includeWorkloadHours", value)} label="ภาระงานพยาบาลโดยประมาณ" />
-              <SettingCheckbox id="include-note" checked={draft.includeNote} onChange={(value) => update("includeNote", value)} label="หมายเหตุประจำเวร" />
+              <SettingCheckbox id="include-note" checked={draft.includeNote} onChange={(value) => update("includeNote", value)} label="หมายเหตุสำหรับ LINE-safe" description="เปิดเมื่อมีข้อความที่ตรวจแล้วว่าไม่มีชื่อหรือรหัสผู้ป่วย" />
             </FieldGroup>
           </FieldSet>
         </SettingsSection>
@@ -429,7 +429,7 @@ export function SettingsPanel({ settings, lineStatus, groups, loadError, onSaved
               <h3 className="font-semibold text-foreground">ความพร้อมของ LINE</h3>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">สถานะจาก environment และ signed webhook discovery</p>
               <ul className="mt-3 divide-y divide-border">
-                <CheckLine label="Channel access token ใน environment" ready={readiness.accessToken} readyLabel="ตั้งค่าแล้ว" notReadyLabel="ยังไม่ตั้งค่า" />
+                <CheckLine label="LINE worker token พร้อมใช้งาน" ready={readiness.accessToken} readyLabel="ตั้งค่าแล้ว" notReadyLabel="ยังไม่ตั้งค่า" />
                 <CheckLine label="Webhook secret ใน environment" ready={readiness.webhookSecret} readyLabel="ตั้งค่าแล้ว" notReadyLabel="ยังไม่ตั้งค่า" />
                 <CheckLine label="Group ID จาก signed webhook" ready={readiness.group} readyLabel="ยืนยันแล้ว" notReadyLabel="ยังไม่ยืนยัน" />
               </ul>
