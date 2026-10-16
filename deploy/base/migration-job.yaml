@@ -14,14 +14,23 @@ spec:
         app.kubernetes.io/name: ipd-report-migrate
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: migrate
           image: ghcr.io/pingsunn/ipd-report-ops@sha256:REPLACE_WITH_OPS_DIGEST
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           command:
             - bun
             - run
@@ -32,3 +41,10 @@ spec:
                 secretKeyRef:
                   name: ipd-report-env
                   key: DIRECT_URL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory

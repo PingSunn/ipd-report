@@ -8,11 +8,13 @@ import {
   toDatabaseDate,
 } from '../../../lib/census-validation';
 import { authErrorResponse, requireUser, type AuthenticatedUser } from '../../../lib/authorization';
+import { RequestBodyTooLargeError, readBoundedBody } from '../../../lib/bounded-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const noStoreHeaders = { 'Cache-Control': 'no-store' };
+const maxCensusBodyBytes = 64 * 1024;
 
 const attributionInclude = {
   createdBy: { select: { id: true, nickname: true } },
@@ -53,6 +55,7 @@ type CensusAuditSource = {
   cat4: number;
   cat5: number;
   note: string;
+  lineNote: string;
 };
 
 function censusAuditSnapshot(record: CensusAuditSource): Prisma.InputJsonObject {
@@ -72,6 +75,7 @@ function censusAuditSnapshot(record: CensusAuditSource): Prisma.InputJsonObject 
     cat4: record.cat4,
     cat5: record.cat5,
     note: record.note,
+    lineNote: record.lineNote,
   };
 }
 
@@ -117,8 +121,17 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   let body: unknown;
+  let bodyText: string;
   try {
-    body = await request.json();
+    bodyText = await readBoundedBody(request, maxCensusBodyBytes);
+  } catch (error: unknown) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return jsonResponse({ success: false, error: 'คำขอมีขนาดใหญ่เกินไป' }, 413);
+    }
+    return validationErrorResponse();
+  }
+  try {
+    body = JSON.parse(bodyText) as unknown;
   } catch {
     return validationErrorResponse();
   }
@@ -148,6 +161,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         cat4: input.cat4,
         cat5: input.cat5,
         note: input.note,
+        lineNote: input.lineNote,
       };
 
       if (existingById) {

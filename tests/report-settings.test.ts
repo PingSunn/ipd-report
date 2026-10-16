@@ -17,7 +17,8 @@ const record: CensusRecord = {
   cat3: 3,
   cat4: 1,
   cat5: 1,
-  note: "รอตรวจซ้ำ",
+  note: "ข้อมูลภายในที่ห้ามส่งออก",
+  lineNote: "รอตรวจซ้ำ",
   updatedAt: "2026-10-14T02:00:00.000Z",
 };
 
@@ -66,13 +67,13 @@ describe("shared report settings", () => {
       "ประเภท 4 (อาการหนัก / กึ่งวิกฤต): 1 ราย",
       "ประเภท 5 (วิกฤต / หนักมาก): 1 ราย",
       "",
-      "หมายเหตุ: รอตรวจซ้ำ",
+      "หมายเหตุสำหรับ LINE: รอตรวจซ้ำ",
     ].join("\n");
 
     expect(compact).toBe(expected);
     expect(standard).toBe(expected);
     expect(detailed).toBe(
-      `${expected.replace("หมายเหตุ: รอตรวจซ้ำ", "ภาระงานพยาบาล 37 ชม./วัน\n\nหมายเหตุ: รอตรวจซ้ำ")}`,
+      `${expected.replace("หมายเหตุสำหรับ LINE: รอตรวจซ้ำ", "ภาระงานพยาบาล 37 ชม./วัน\n\nหมายเหตุสำหรับ LINE: รอตรวจซ้ำ")}`,
     );
     expect(compact).not.toMatch(/โรงพยาบาลทดสอบ|หอผู้ป่วย A|พยาบาลเวรเช้า/);
   });

@@ -39,6 +39,11 @@ export function defaultSettingsValues(): SettingsUpdateInput {
   return { ...DEFAULT_SETTINGS };
 }
 
+/** The web process receives only this non-secret readiness flag. */
+export function isLineAccessTokenConfigured(): boolean {
+  return process.env['LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED'] === 'true';
+}
+
 export async function getAppSettings(): Promise<PrismaAppSettings> {
   const existing = await prisma.appSettings.findUnique({ where: { id: SETTINGS_ID } });
   if (existing) return existing;
@@ -69,7 +74,7 @@ export async function updateAppSettings(input: SettingsUpdateInput): Promise<Pri
 export function lineStatus(
   workerState: PrismaLineWorkerState | null | undefined
 ): LineStatusDto {
-  const accessTokenConfigured = Boolean(process.env['LINE_CHANNEL_ACCESS_TOKEN']?.trim());
+  const accessTokenConfigured = isLineAccessTokenConfigured();
   const webhookSecretConfigured = Boolean(process.env['LINE_CHANNEL_SECRET']?.trim());
   return {
     accessTokenConfigured,

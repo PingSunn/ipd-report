@@ -12,3 +12,5 @@ spec:
               value: https://ipd.pskwr.com
             - name: BETTER_AUTH_TRUSTED_ORIGINS
               value: https://ipd.pskwr.com
+            - name: LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED
+              value: "true"

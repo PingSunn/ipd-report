@@ -12,14 +12,23 @@ spec:
       labels:
         app.kubernetes.io/name: ipd-report
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: ghcr.io/pingsunn/ipd-report@sha256:REPLACE_WITH_APP_DIGEST
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 40000
@@ -49,16 +58,10 @@ spec:
                 secretKeyRef:
                   name: ipd-report-env
                   key: AUTH_BOOTSTRAP_EMAIL
-            - name: LINE_CHANNEL_ID
-              valueFrom:
-                secretKeyRef:
-                  name: ipd-report-env
-                  key: LINE_CHANNEL_ID
-            - name: LINE_CHANNEL_ACCESS_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: ipd-report-env
-                  key: LINE_CHANNEL_ACCESS_TOKEN
+            # The web process needs only a non-secret readiness indicator. The
+            # actual token is mounted into the isolated LINE worker below.
+            - name: LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED
+              value: "false"
             - name: LINE_CHANNEL_SECRET
               valueFrom:
                 secretKeyRef:
@@ -86,3 +89,10 @@ spec:
             limits:
               cpu: 1
               memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory

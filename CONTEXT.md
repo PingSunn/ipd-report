@@ -19,11 +19,23 @@ The sum of category counts multiplied by their existing daily care-hour weights:
 
 **LINE summary**:
 Shift-summary text containing the reporting date, shift, selected census figures,
-and optional note. Hospital, ward, and reporter names are excluded from its body.
+and an optional LINE-safe note. Hospital, ward, reporter names, and the internal
+census note are excluded from its body.
 When patient categories are included, each category carries its care-demand label
 and count on a separate line. The same generated summary is used by previews,
 manual copying, and scheduled delivery.
 _Avoid_: LINE delivery receipt
+
+**LINE-safe note**:
+Optional operational text written specifically for external delivery to the
+configured LINE group. It must not contain patient identifiers or clinical free
+text copied from the internal census note.
+_Avoid_: Census note, patient note
+
+**LINE delivery metadata**:
+The schedule, destination, status, attempts, and provider timestamps retained
+after a LINE send. Accepted message text is erased and is not delivery metadata.
+_Avoid_: LINE summary, message archive
 
 **Scheduled report slot**:
 A census reporting date and shift with a configured reporting time. Its identity

@@ -71,6 +71,10 @@ export const censusRecordSchema = z
     note: z
       .string({ message: 'หมายเหตุต้องเป็นข้อความ' })
       .max(5000, 'หมายเหตุยาวเกินไป'),
+    lineNote: z
+      .string({ message: 'หมายเหตุสำหรับ LINE ต้องเป็นข้อความ' })
+      .max(1000, 'หมายเหตุสำหรับ LINE ยาวเกินไป')
+      .default(''),
     updatedAt: z.string().datetime({ offset: true }).optional(),
   })
   .strict();
@@ -121,6 +125,7 @@ export function toCensusRecord(record: CensusRecordWithAttribution) {
     cat4: record.cat4,
     cat5: record.cat5,
     note: record.note,
+    lineNote: record.lineNote,
     updatedAt: record.updatedAt.toISOString(),
     createdBy: toAuthorAttribution(record.createdBy),
     updatedBy: toAuthorAttribution(record.updatedBy),
@@ -133,7 +138,11 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 
 export function isSameOriginMutation(request: Request): boolean {
   const origin = request.headers.get('origin');
-  if (!origin) return true;
+  if (!origin) {
+    // Browser cookie-authenticated unsafe requests should carry Origin. Keep
+    // origin-less requests available to server-to-server callers and tests.
+    return !request.headers.get('cookie') && request.headers.get('sec-fetch-site') !== 'cross-site';
+  }
 
   try {
     const originUrl = new URL(origin);
@@ -163,12 +172,15 @@ export function isSameOriginMutation(request: Request): boolean {
 }
 
 function isConfiguredTrustedOrigin(originUrl: URL): boolean {
-  const configuredOrigins = process.env['BETTER_AUTH_TRUSTED_ORIGINS']
-    ?? process.env['BETTER_AUTH_URL']
-    ?? process.env['NEXT_PUBLIC_APP_URL']
-    ?? '';
+  const configuredOrigins = [
+    process.env['BETTER_AUTH_TRUSTED_ORIGINS'],
+    process.env['BETTER_AUTH_URL'],
+    process.env['NEXT_PUBLIC_APP_URL'],
+  ]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => value.split(','));
 
-  return configuredOrigins.split(',').some((configuredOrigin) => {
+  return configuredOrigins.some((configuredOrigin) => {
     try {
       const trustedUrl = new URL(configuredOrigin.trim());
       return (trustedUrl.protocol === 'http:' || trustedUrl.protocol === 'https:')

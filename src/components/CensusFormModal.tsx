@@ -164,6 +164,7 @@ export const CensusForm: React.FC<CensusFormProps> = ({
     cat5: initialRecord?.cat5 || 0,
   });
   const [note, setNote] = useState(initialRecord?.note || "");
+  const [lineNote, setLineNote] = useState(initialRecord?.lineNote || "");
   const [error, setError] = useState<string | null>(null);
   const [draftId] = useState(makeDraftId);
 
@@ -195,6 +196,7 @@ export const CensusForm: React.FC<CensusFormProps> = ({
       cat5: initialRecord.cat5,
     });
     setNote(initialRecord.note || "");
+    setLineNote(initialRecord.lineNote || "");
     setAutoAvailable(
       initialRecord.availableBeds ===
         Math.max(
@@ -251,6 +253,7 @@ export const CensusForm: React.FC<CensusFormProps> = ({
       referrals,
       ...categories,
       note: note.trim(),
+      lineNote: lineNote.trim(),
       updatedAt: initialRecord?.updatedAt || new Date().toISOString(),
     }),
     [
@@ -265,6 +268,7 @@ export const CensusForm: React.FC<CensusFormProps> = ({
       initialRecord?.updatedAt,
       newPatients,
       note,
+      lineNote,
       referrals,
       shift,
       totalPatients,
@@ -295,6 +299,7 @@ export const CensusForm: React.FC<CensusFormProps> = ({
       cat5: duplicateRecord.cat5,
     });
     setNote(duplicateRecord.note);
+    setLineNote(duplicateRecord.lineNote || "");
   };
   const applyPrevious = () => {
     if (!previousShiftRecord) return;
@@ -624,14 +629,30 @@ export const CensusForm: React.FC<CensusFormProps> = ({
       </section>
       <section>
         <Label htmlFor="report-note">
-          หมายเหตุประจำเวร{" "}
+          หมายเหตุภายในประจำเวร{" "}
           <span className="font-normal text-muted-foreground">(ถ้ามี)</span>
         </Label>
         <Textarea
           id="report-note"
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="เช่น รอผลตรวจ, เตรียมส่งต่อ..."
+          placeholder="บันทึกสำหรับทีมภายใน เช่น รอผลตรวจ, เตรียมส่งต่อ..."
+          className="mt-2 min-h-24"
+        />
+      </section>
+      <section>
+        <Label htmlFor="line-note">
+          หมายเหตุสำหรับ LINE-safe{" "}
+          <span className="font-normal text-muted-foreground">(ถ้ามี)</span>
+        </Label>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          ส่งไปยังกลุ่ม LINE ที่ตั้งค่าไว้เมื่อเปิดตัวเลือกนี้เท่านั้น ห้ามใส่ชื่อ รหัสผู้ป่วย HN หรือข้อมูลที่ระบุตัวผู้ป่วยได้
+        </p>
+        <Textarea
+          id="line-note"
+          value={lineNote}
+          onChange={(event) => setLineNote(event.target.value)}
+          placeholder="เช่น เตรียมทีมรับส่งต่อ (ไม่มีข้อมูลผู้ป่วยเฉพาะราย)"
           className="mt-2 min-h-24"
         />
       </section>

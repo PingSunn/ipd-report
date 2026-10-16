@@ -273,8 +273,8 @@ export function generateLineShiftSummary(
     sections.push(`ภาระงานพยาบาล ${workloadHours} ชม./วัน`);
   }
 
-  if (includeNote && record.note) {
-    sections.push(`หมายเหตุ: ${record.note}`);
+  if (includeNote && record.lineNote) {
+    sections.push(`หมายเหตุสำหรับ LINE: ${record.lineNote}`);
   }
 
   return sections.join('\n\n');

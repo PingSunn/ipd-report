@@ -63,3 +63,30 @@ export async function readBoundedBodyBytes(
   }
   return body;
 }
+
+type RequestHandler = (request: Request) => Promise<Response>;
+
+export function withBoundedRequestBody(
+  handler: RequestHandler,
+  maxBytes: number,
+): RequestHandler {
+  return async (request) => {
+    let body: Uint8Array;
+    try {
+      body = await readBoundedBodyBytes(request, maxBytes);
+    } catch (error: unknown) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return Response.json({ error: 'Request body too large' }, { status: 413 });
+      }
+      throw error;
+    }
+
+    const boundedRequest = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: body.byteLength > 0 ? Uint8Array.from(body).buffer : undefined,
+      signal: request.signal,
+    });
+    return handler(boundedRequest);
+  };
+}

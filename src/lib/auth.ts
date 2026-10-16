@@ -11,9 +11,8 @@ if (process.env['NODE_ENV'] === 'production' && (!configuredSecret || configured
   throw new Error('BETTER_AUTH_SECRET must be configured with at least 32 characters in production.');
 }
 
-const bootstrapEmail = normalizeEmail(
-  process.env['AUTH_BOOTSTRAP_EMAIL'] ?? 'pongsakorn.wera@gmail.com',
-);
+const configuredBootstrapEmail = process.env['AUTH_BOOTSTRAP_EMAIL']?.trim();
+const bootstrapEmail = configuredBootstrapEmail ? normalizeEmail(configuredBootstrapEmail) : '';
 const betterAuthSecret = configuredSecret ?? 'local-development-secret-change-before-production';
 const trustedOrigins = (process.env['BETTER_AUTH_TRUSTED_ORIGINS'] ?? appUrl)
   .split(',')
@@ -32,10 +31,13 @@ export const auth = betterAuth({
     google: {
       clientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
       clientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
-      accessType: 'offline',
       prompt: 'select_account',
     },
   },
+  account: {
+    encryptOAuthTokens: true,
+  },
+  disabledPaths: ['/update-user'],
   user: {
     additionalFields: {
       role: { type: 'string', required: false, defaultValue: 'nurse', input: false },
@@ -65,6 +67,28 @@ export const auth = betterAuth({
     },
   },
   databaseHooks: {
+    account: {
+      create: {
+        before: async (account) => ({
+          data: {
+            ...account,
+            accessToken: null,
+            refreshToken: null,
+            idToken: null,
+          },
+        }),
+      },
+      update: {
+        before: async (account) => ({
+          data: {
+            ...account,
+            accessToken: null,
+            refreshToken: null,
+            idToken: null,
+          },
+        }),
+      },
+    },
     user: {
       create: {
         before: async (user) => ({

@@ -53,6 +53,7 @@ function toCensusRecord(record: PrismaCensusRecord): LineCensusRecord {
     cat4: record.cat4,
     cat5: record.cat5,
     note: record.note,
+    lineNote: record.lineNote,
     updatedAt: record.updatedAt.toISOString(),
   };
 }
@@ -381,7 +382,18 @@ export class LineService {
     if (result.accepted) {
       const updated = await transaction.lineDelivery.updateMany({
         where: leaseWhere,
-        data: { status: 'ACCEPTED', acceptedAt: now, claimedAt: null, leaseOwner: null, nextAttemptAt: null, lastError: null, updatedAt: now },
+        data: {
+          status: 'ACCEPTED',
+          acceptedAt: now,
+          // Provider acceptance is the retention boundary: keep delivery
+          // metadata, but erase the report body immediately in the same CAS.
+          messageText: '',
+          claimedAt: null,
+          leaseOwner: null,
+          nextAttemptAt: null,
+          lastError: null,
+          updatedAt: now,
+        },
       });
       return updated.count === 1
         ? { heartbeatAt: now, deliveryId: row.id, action: 'SENT', status: 'ACCEPTED' }

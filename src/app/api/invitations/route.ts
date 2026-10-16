@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { authErrorResponse, requireWardHead } from '../../../lib/authorization';
-import { createInvitation, normalizeEmail, serializeInvitation } from '../../../lib/invitations';
+import {
+  createInvitation,
+  InvitationAuthorizationError,
+  normalizeEmail,
+  serializeInvitation,
+} from '../../../lib/invitations';
+import { RequestBodyTooLargeError, readBoundedBody } from '../../../lib/bounded-body';
 import { isSameOriginMutation } from '../../../lib/census-validation';
 import { prisma } from '../../../lib/prisma';
 
@@ -15,6 +21,7 @@ const createSchema = z.object({
   ),
   role: z.enum(['nurse', 'ward_head']).default('nurse'),
 }).strict();
+const maxInvitationBodyBytes = 16 * 1024;
 
 export async function GET(): Promise<Response> {
   try {
@@ -35,7 +42,22 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ success: false, error: 'คำขอจากต้นทางไม่ถูกต้อง' }, { status: 403 });
     }
     const actor = await requireWardHead();
-    const parsed = createSchema.safeParse(await request.json());
+    let bodyText: string;
+    try {
+      bodyText = await readBoundedBody(request, maxInvitationBodyBytes);
+    } catch (error: unknown) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return NextResponse.json({ success: false, error: 'คำขอมีขนาดใหญ่เกินไป' }, { status: 413 });
+      }
+      return NextResponse.json({ success: false, error: 'ข้อมูลคำเชิญไม่ถูกต้อง' }, { status: 400 });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(bodyText) as unknown;
+    } catch {
+      return NextResponse.json({ success: false, error: 'ข้อมูลคำเชิญไม่ถูกต้อง' }, { status: 400 });
+    }
+    const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ success: false, error: 'กรุณาระบุ Gmail และ role ที่ถูกต้อง' }, { status: 400 });
     }
@@ -50,6 +72,9 @@ export async function POST(request: Request): Promise<Response> {
     const result = await createInvitation({ ...parsed.data, email, createdById: actor.id });
     return NextResponse.json({ success: true, invitation: serializeInvitation(result.invitation) }, { status: 201 });
   } catch (error: unknown) {
+    if (error instanceof InvitationAuthorizationError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
+    }
     return authErrorResponse(error);
   }
 }

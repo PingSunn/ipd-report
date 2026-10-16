@@ -39,7 +39,10 @@ export interface LineCensusRecord {
   cat3: number;
   cat4: number;
   cat5: number;
+  /** Retained for the shared summary type; never rendered by LINE generation. */
   note: string;
+  /** LINE-safe note only; internal census notes are intentionally absent. */
+  lineNote?: string;
   updatedAt: string;
 }
 

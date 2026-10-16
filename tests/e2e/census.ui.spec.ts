@@ -18,6 +18,7 @@ type CensusPayload = {
   cat4: number;
   cat5: number;
   note: string;
+  lineNote: string;
 };
 
 type CensusListResponse = {
@@ -49,6 +50,7 @@ function recordFor(projectName: string): CensusPayload {
     cat4: 2,
     cat5: 1,
     note: 'QA temporary',
+    lineNote: 'QA line-safe',
   };
 }
 
@@ -192,6 +194,7 @@ test.describe('live census UI', () => {
       await selectRadixOption(page, page.locator('#report-shift'), /เวรบ่าย/);
       await page.locator('#total-patients').fill('13');
       await page.locator('#report-note').fill('QA temporary edited');
+      await page.locator('#line-note').fill('QA line-safe edited');
       await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
       await expect(page).toHaveURL(/\/$/);
       await expectRecordVisible(page, editedDate);
@@ -239,7 +242,7 @@ test.describe('live census UI', () => {
       const workloadCheckbox = page.getByRole('checkbox', { name: 'ภาระงานโดยประมาณ' });
       await expect(workloadCheckbox).toBeChecked();
       await expect(workloadCheckbox).toBeDisabled();
-      await expect(lineText).toHaveValue(/หมายเหตุ: QA temporary edited/);
+      await expect(lineText).toHaveValue(/หมายเหตุสำหรับ LINE: QA line-safe edited/);
       if (process.env.CAPTURE_REVIEW === 'plain-line') {
         await captureStableScreenshot(page, screenshotPath(testInfo, 'line'));
       }

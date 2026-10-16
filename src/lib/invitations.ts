@@ -1,9 +1,30 @@
-import { Role } from '../generated/prisma/client';
+import { Prisma, Role } from '../generated/prisma/client';
 import { prisma } from './prisma';
 
 const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
 
 export type AppRole = 'nurse' | 'ward_head';
+
+export class InvitationAuthorizationError extends Error {
+  readonly code = 'forbidden';
+  readonly status = 403;
+
+  constructor() {
+    super('ต้องใช้สิทธิ์หัวหน้าหอผู้ป่วย');
+    this.name = 'InvitationAuthorizationError';
+  }
+}
+
+async function assertActiveWardHead(tx: Prisma.TransactionClient, actorId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('ipd-report-active-ward-heads'))`;
+  const actor = await tx.user.findUnique({
+    where: { id: actorId },
+    select: { role: true, active: true },
+  });
+  if (!actor?.active || actor.role !== Role.ward_head) {
+    throw new InvitationAuthorizationError();
+  }
+}
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -37,6 +58,7 @@ export async function createInvitation(input: {
   const email = normalizeEmail(input.email);
   const role = roleFromInput(input.role);
   const invitation = await prisma.$transaction(async (tx) => {
+    await assertActiveWardHead(tx, input.createdById);
     const replaced = await tx.invitation.updateMany({
       where: { email, acceptedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -65,6 +87,7 @@ export async function createInvitation(input: {
 
 export async function revokeInvitation(id: string, actorId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await assertActiveWardHead(tx, actorId);
     const result = await tx.invitation.updateMany({
       where: { id, acceptedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },

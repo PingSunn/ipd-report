@@ -24,6 +24,7 @@ function censusAuditSnapshot(record: {
   cat4: number;
   cat5: number;
   note: string;
+  lineNote: string;
 }): Prisma.InputJsonObject {
   return {
     id: record.id,
@@ -41,6 +42,7 @@ function censusAuditSnapshot(record: {
     cat4: record.cat4,
     cat5: record.cat5,
     note: record.note,
+    lineNote: record.lineNote,
   };
 }
 

@@ -32,7 +32,8 @@ const lineRecord = {
   cat3: 3,
   cat4: 1,
   cat5: 1,
-  note: 'รอตรวจซ้ำ',
+  note: 'ข้อมูลภายในที่ห้ามส่งออก',
+  lineNote: 'เตรียมทีมรับส่งต่อ',
   updatedAt: '2026-10-14T02:00:00.000Z',
 };
 
@@ -51,11 +52,17 @@ describe('LINE message limits', () => {
       'ประเภท 4 (อาการหนัก / กึ่งวิกฤต): 1 ราย',
       'ประเภท 5 (วิกฤต / หนักมาก): 1 ราย',
       '',
-      'หมายเหตุ: รอตรวจซ้ำ',
+      'หมายเหตุสำหรับ LINE: เตรียมทีมรับส่งต่อ',
     ].join('\n'));
     expect(generateMissingMessage('2026-10-14', 'เช้า', settings)).toBe(
       '14 ต.ค. 2569 · เวรเช้า\n\nยังไม่มีข้อมูลเวรนี้',
     );
+  });
+
+  it('never includes the internal census note in LINE output', () => {
+    const message = generateReportMessage(lineRecord, { ...settings, includeNote: true });
+    expect(message).toContain('เตรียมทีมรับส่งต่อ');
+    expect(message).not.toContain('ข้อมูลภายในที่ห้ามส่งออก');
   });
 
   it('counts UTF-16 units while never splitting a surrogate pair', () => {
