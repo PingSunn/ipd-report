@@ -115,6 +115,7 @@ export function isSameOriginMutation(request: Request): boolean {
     if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') {
       return false;
     }
+    if (isConfiguredTrustedOrigin(originUrl)) return true;
 
     const requestUrl = new URL(request.url);
     const forwardedHost = firstForwardedValue(request.headers.get('x-forwarded-host'));
@@ -134,6 +135,23 @@ export function isSameOriginMutation(request: Request): boolean {
   } catch {
     return false;
   }
+}
+
+function isConfiguredTrustedOrigin(originUrl: URL): boolean {
+  const configuredOrigins = process.env['BETTER_AUTH_TRUSTED_ORIGINS']
+    ?? process.env['BETTER_AUTH_URL']
+    ?? process.env['NEXT_PUBLIC_APP_URL']
+    ?? '';
+
+  return configuredOrigins.split(',').some((configuredOrigin) => {
+    try {
+      const trustedUrl = new URL(configuredOrigin.trim());
+      return (trustedUrl.protocol === 'http:' || trustedUrl.protocol === 'https:')
+        && trustedUrl.origin === originUrl.origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function firstForwardedValue(value: string | null): string | null {

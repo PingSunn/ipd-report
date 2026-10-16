@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
@@ -80,6 +80,10 @@ beforeEach(() => {
   );
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('POST /api/census validation and upsert behavior', () => {
   it('accepts the browser origin when a trusted reverse proxy forwards host and protocol', async () => {
     const existing = dbRecord({ id: payload.id });
@@ -91,6 +95,23 @@ describe('POST /api/census validation and upsert behavior', () => {
         origin: 'https://census.example.org',
         host: '127.0.0.1:3000',
         'x-forwarded-host': 'census.example.org',
+        'x-forwarded-proto': 'https',
+      })
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it('accepts a configured public origin when the proxy exposes only its internal host', async () => {
+    vi.stubEnv('BETTER_AUTH_TRUSTED_ORIGINS', 'https://census.example.org');
+    const existing = dbRecord({ id: payload.id });
+    mockPrisma.censusRecord.findUnique.mockResolvedValue(existing);
+    mockPrisma.censusRecord.update.mockResolvedValue(existing);
+
+    const response = await POST(
+      post(payload, {
+        origin: 'https://census.example.org',
+        host: 'ipd-report.ipd-report.svc.cluster.local',
         'x-forwarded-proto': 'https',
       })
     );

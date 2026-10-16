@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockPrisma, mockRequireUser, mockAuthErrorResponse } = vi.hoisted(() => ({
   mockPrisma: { user: { update: vi.fn() } },
@@ -37,6 +37,10 @@ function request(body: unknown, headers: Record<string, string> = {}): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRequireUser.mockResolvedValue(actor);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('profile API', () => {
@@ -102,6 +106,47 @@ describe('profile API', () => {
       nickname: 'กร',
       profileComplete: true,
     });
+  });
+
+  it('accepts a configured public origin when the reverse proxy exposes an internal host', async () => {
+    vi.stubEnv('BETTER_AUTH_TRUSTED_ORIGINS', 'https://ipd.pskwr.com');
+    mockPrisma.user.update.mockResolvedValue({
+      id: actor.id,
+      email: actor.email,
+      name: 'พงศกร วีระ',
+      firstName: 'พงศกร',
+      lastName: 'วีระ',
+      nickname: 'กร',
+    });
+
+    const response = await PATCH(request(
+      { firstName: 'พงศกร', lastName: 'วีระ', nickname: 'กร' },
+      {
+        origin: 'https://ipd.pskwr.com',
+        host: 'ipd-report.ipd-report.svc.cluster.local',
+        'x-forwarded-proto': 'https',
+      },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mockPrisma.user.update).toHaveBeenCalled();
+  });
+
+  it('rejects a foreign origin when the proxy exposes an internal host', async () => {
+    vi.stubEnv('BETTER_AUTH_TRUSTED_ORIGINS', 'https://ipd.pskwr.com');
+
+    const response = await PATCH(request(
+      { firstName: 'พงศกร', lastName: 'วีระ', nickname: 'กร' },
+      {
+        origin: 'https://evil.example.org',
+        host: 'ipd-report.ipd-report.svc.cluster.local',
+        'x-forwarded-proto': 'https',
+      },
+    ));
+
+    expect(response.status).toBe(403);
+    expect(mockRequireUser).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects cross-origin profile updates', async () => {
