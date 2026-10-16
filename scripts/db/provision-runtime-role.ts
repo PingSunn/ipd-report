@@ -70,16 +70,39 @@ async function main(): Promise<void> {
       DO $provision$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${quoteLiteral(role)}) THEN
-          EXECUTE 'CREATE ROLE ${roleIdentifier} LOGIN';
+          EXECUTE 'CREATE ROLE ${roleIdentifier} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
         END IF;
       END
       $provision$;
     `);
     await client.query(`
       ALTER ROLE ${roleIdentifier}
-        WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION
-        NOBYPASSRLS CONNECTION LIMIT 20 PASSWORD ${passwordLiteral}
+        WITH LOGIN CONNECTION LIMIT 20 PASSWORD ${passwordLiteral}
     `);
+    const roleAttributes = await client.query<{
+      rolsuper: boolean;
+      rolcreatedb: boolean;
+      rolcreaterole: boolean;
+      rolinherit: boolean;
+      rolreplication: boolean;
+      rolbypassrls: boolean;
+    }>(`
+      SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls
+      FROM pg_roles
+      WHERE rolname = ${quoteLiteral(role)}
+    `);
+    const attributes = roleAttributes.rows[0];
+    if (
+      !attributes ||
+      attributes.rolsuper ||
+      attributes.rolcreatedb ||
+      attributes.rolcreaterole ||
+      attributes.rolinherit ||
+      attributes.rolreplication ||
+      attributes.rolbypassrls
+    ) {
+      throw new Error(`${role} has unsafe role attributes; an administrator must revoke them before provisioning`);
+    }
     await client.query(`REVOKE ALL PRIVILEGES ON DATABASE ${databaseIdentifier} FROM ${roleIdentifier}`);
     await client.query(`GRANT CONNECT ON DATABASE ${databaseIdentifier} TO ${roleIdentifier}`);
     await client.query(`REVOKE ALL ON SCHEMA public FROM ${roleIdentifier}`);
