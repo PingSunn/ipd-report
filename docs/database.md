@@ -107,7 +107,10 @@ It also revokes default table and sequence grants so newly created objects are
 inaccessible until reviewed and added to the provisioner. Set
 `DB_OWNER_ROLE` when migrations run as a role different from the role in
 `DIRECT_URL`. Rerun the script after every migration that adds a table or
-sequence so its explicit grants and policy are created.
+sequence so its explicit grants and policy are created. The script supports
+Supabase's delegated `postgres` role: restricted attributes are set at role
+creation and verified on every run without requiring `SUPERUSER` to rewrite
+those attributes.
 
 After verifying the role with a read-only `\du`/`\dp` check, put the pooled
 `ipd_app` URL in `DATABASE_URL`, keep the migration-owner URL in `DIRECT_URL`,
