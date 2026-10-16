@@ -30,6 +30,15 @@ function isShift(value: unknown): value is ShiftType {
   return value === 'เช้า' || value === 'บ่าย' || value === 'ดึก';
 }
 
+function isAttribution(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    (typeof value.id === 'string' || value.id === null) &&
+    typeof value.displayName === 'string' &&
+    value.displayName.trim().length > 0
+  );
+}
+
 function isCensusRecord(value: unknown): value is CensusRecord {
   if (!isObject(value)) return false;
   const requiredNumbers = [
@@ -53,7 +62,9 @@ function isCensusRecord(value: unknown): value is CensusRecord {
     typeof value.updatedAt === 'string' &&
     requiredNumbers.every(
       (field) => typeof value[field] === 'number' && Number.isFinite(value[field])
-    )
+    ) &&
+    (value.createdBy === undefined || isAttribution(value.createdBy)) &&
+    (value.updatedBy === undefined || isAttribution(value.updatedBy))
   );
 }
 
@@ -125,6 +136,8 @@ export async function getCensusRecords(): Promise<{
 /** Insert or update a census record through the Next.js API. */
 export async function saveCensusRecord(record: CensusRecord): Promise<SaveCensusResponse> {
   const payload: CensusRecord = { ...record, updatedAt: new Date().toISOString() };
+  delete payload.createdBy;
+  delete payload.updatedBy;
 
   try {
     const response = await fetch('/api/census', {

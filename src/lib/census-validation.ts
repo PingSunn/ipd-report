@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { CensusRecord as PrismaCensusRecord } from '../generated/prisma/client';
-import type { CensusRecord, ShiftType } from '../types/census';
+import type { ShiftType } from '../types/census';
 
 const shifts: readonly [ShiftType, ShiftType, ShiftType] = ['เช้า', 'บ่าย', 'ดึก'];
 
@@ -81,7 +81,30 @@ export function toDatabaseDate(date: string): Date {
   return new Date(`${date}T00:00:00.000Z`);
 }
 
-export function toCensusRecord(record: PrismaCensusRecord): CensusRecord {
+type CensusUserAttribution = {
+  id: string;
+  nickname: string | null;
+};
+
+type CensusRecordWithAttribution = PrismaCensusRecord & {
+  createdBy: CensusUserAttribution | null;
+  updatedBy: CensusUserAttribution | null;
+};
+
+export const UNKNOWN_CENSUS_AUTHOR = 'ระบบ/ไม่ทราบผู้บันทึก';
+
+function toAuthorAttribution(user: CensusUserAttribution | null): {
+  id: string | null;
+  displayName: string;
+} {
+  const nickname = user?.nickname?.trim();
+  return {
+    id: user?.id ?? null,
+    displayName: nickname || UNKNOWN_CENSUS_AUTHOR,
+  };
+}
+
+export function toCensusRecord(record: CensusRecordWithAttribution) {
   return {
     id: record.id,
     date: record.date.toISOString().slice(0, 10),
@@ -99,6 +122,8 @@ export function toCensusRecord(record: PrismaCensusRecord): CensusRecord {
     cat5: record.cat5,
     note: record.note,
     updatedAt: record.updatedAt.toISOString(),
+    createdBy: toAuthorAttribution(record.createdBy),
+    updatedBy: toAuthorAttribution(record.updatedBy),
   };
 }
 

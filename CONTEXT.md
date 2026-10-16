@@ -55,6 +55,13 @@ An immutable account of a census or administration change, including its actor
 and the relevant before-and-after state. Historical data without an actor is
 attributed to System.
 
+**Census attribution**:
+The creator and latest updater attached to a census record. History shows the
+users' nicknames only; when both are the same user it shows one creator label
+with the latest edit time. A missing or deleted actor is shown as
+`ระบบ/ไม่ทราบผู้บันทึก`. Attribution is excluded from LINE summaries and other
+census surfaces.
+
 **User profile**:
 The authenticated user's confirmed first name, last name, and nickname. A user
 whose profile is incomplete must finish it before accessing ward functions.

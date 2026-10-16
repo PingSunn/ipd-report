@@ -19,6 +19,8 @@ type CensusRecord = {
   cat5: number;
   note: string;
   updatedAt: string;
+  createdBy: { id: string | null; displayName: string };
+  updatedBy: { id: string | null; displayName: string };
 };
 
 const records: CensusRecord[] = [
@@ -39,6 +41,8 @@ const records: CensusRecord[] = [
     cat5: 1,
     note: 'controls fixture morning',
     updatedAt: '2099-11-01T08:00:00.000Z',
+    createdBy: { id: 'user-ping', displayName: 'ปิง' },
+    updatedBy: { id: 'user-ping', displayName: 'ปิง' },
   },
   {
     id: 'controls-fixture-2',
@@ -57,6 +61,8 @@ const records: CensusRecord[] = [
     cat5: 2,
     note: 'controls fixture afternoon with a deliberately long note for width checks',
     updatedAt: '2099-11-02T16:00:00.000Z',
+    createdBy: { id: 'user-ping', displayName: 'ปิง' },
+    updatedBy: { id: 'user-fon', displayName: 'ฝน' },
   },
 ];
 
@@ -259,9 +265,11 @@ test.describe('shared control behavior', () => {
     await expect(customDate).toHaveValue('02/11/2642');
     const visibleHistory = page.locator('article:visible, table:visible');
     await expect(visibleHistory.getByText('2 พ.ย. 2642', { exact: true })).toBeVisible();
+    await expect(visibleHistory.getByText('บันทึกโดย ปิง · แก้ล่าสุดโดย ฝน', { exact: true })).toBeVisible();
     await expect(visibleHistory.getByText('1 พ.ย. 2642', { exact: true })).toHaveCount(0);
     await customDate.fill('');
     await expect(visibleHistory.getByText('1 พ.ย. 2642', { exact: true })).toBeVisible();
+    await expect(visibleHistory.getByText('บันทึกโดย ปิง', { exact: true })).toBeVisible();
     const historySearch = page.getByRole('textbox', { name: 'ค้นหารายการ' });
     await historySearch.fill('controls-fixture-2');
     await expect(visibleHistory.getByText('2 พ.ย. 2642', { exact: true })).toBeVisible();

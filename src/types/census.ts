@@ -1,5 +1,10 @@
 export type ShiftType = 'เช้า' | 'บ่าย' | 'ดึก';
 
+export interface CensusAttribution {
+  id: string | null;
+  displayName: string;
+}
+
 export interface CensusRecord {
   id: string;
   date: string; // yyyy-MM-dd
@@ -17,6 +22,10 @@ export interface CensusRecord {
   cat5: number; // ประเภท 5: วิกฤต / หนักมาก (เฝ้าระวังใกล้ชิด / Critical Care)
   note: string;
   updatedAt: string;
+  /** Present on records read from the API; omitted from form submissions. */
+  createdBy?: CensusAttribution;
+  /** Present on records read from the API; omitted from form submissions. */
+  updatedBy?: CensusAttribution;
 }
 
 export interface SaveCensusResponse {
