@@ -16,6 +16,8 @@ spec:
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
       containers:
         - name: migrate
           image: ghcr.io/pingsunn/ipd-report-ops@sha256:REPLACE_WITH_OPS_DIGEST
