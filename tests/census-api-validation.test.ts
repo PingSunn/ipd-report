@@ -4,6 +4,7 @@ const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
     $transaction: vi.fn(),
     censusRecord: {
+      findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
       upsert: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock('../src/lib/authorization', () => ({
   authErrorResponse: vi.fn(() => Response.json({ success: false }, { status: 401 })),
 }));
 
-import { POST } from '../src/app/api/census/route';
+import { GET, POST } from '../src/app/api/census/route';
 
 type CensusPayload = {
   id: string;
@@ -56,12 +57,24 @@ const payload: CensusPayload = {
   note: 'ตรวจสอบแล้ว',
 };
 
-function dbRecord(overrides: Partial<CensusPayload> & { id?: string } = {}) {
+function dbRecord(
+  overrides: Partial<CensusPayload> & { id?: string } = {},
+  attribution: {
+    createdBy?: { id: string; nickname: string | null } | null;
+    updatedBy?: { id: string; nickname: string | null } | null;
+  } = {}
+) {
   const value = { ...payload, ...overrides };
   return {
     ...value,
     date: new Date(`${value.date}T00:00:00.000Z`),
     updatedAt: new Date('2026-10-14T08:00:00.000Z'),
+    createdBy: 'createdBy' in attribution
+      ? attribution.createdBy
+      : { id: 'test-user', nickname: 'ปิง' },
+    updatedBy: 'updatedBy' in attribution
+      ? attribution.updatedBy
+      : { id: 'test-user', nickname: 'ปิง' },
   };
 }
 
@@ -85,6 +98,45 @@ afterEach(() => {
 });
 
 describe('POST /api/census validation and upsert behavior', () => {
+  it('returns creator and latest updater nicknames for the history view', async () => {
+    mockPrisma.censusRecord.findMany.mockResolvedValue([
+      dbRecord({}, {
+        createdBy: { id: 'creator-1', nickname: ' แอน ' },
+        updatedBy: { id: 'updater-1', nickname: 'บี' },
+      }),
+    ]);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.records[0]).toEqual(expect.objectContaining({
+      createdBy: { id: 'creator-1', displayName: 'แอน' },
+      updatedBy: { id: 'updater-1', displayName: 'บี' },
+    }));
+    expect(mockPrisma.censusRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: {
+        createdBy: { select: { id: true, nickname: true } },
+        updatedBy: { select: { id: true, nickname: true } },
+      },
+    }));
+  });
+
+  it('uses an explicit fallback when attribution is unavailable', async () => {
+    mockPrisma.censusRecord.findMany.mockResolvedValue([
+      dbRecord({}, {
+        createdBy: null,
+        updatedBy: { id: 'legacy-user', nickname: '   ' },
+      }),
+    ]);
+
+    const response = await GET();
+    const record = (await response.json()).records[0];
+
+    expect(record.createdBy).toEqual({ id: null, displayName: 'ระบบ/ไม่ทราบผู้บันทึก' });
+    expect(record.updatedBy).toEqual({ id: 'legacy-user', displayName: 'ระบบ/ไม่ทราบผู้บันทึก' });
+  });
+
   it('accepts the browser origin when a trusted reverse proxy forwards host and protocol', async () => {
     const existing = dbRecord({ id: payload.id });
     mockPrisma.censusRecord.findUnique.mockResolvedValue(existing);
@@ -159,8 +211,16 @@ describe('POST /api/census validation and upsert behavior', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.record.id).toBe(payload.id);
+    expect(body.record.createdBy).toEqual({ id: 'test-user', displayName: 'ปิง' });
+    expect(body.record.updatedBy).toEqual({ id: 'test-user', displayName: 'ปิง' });
     expect(mockPrisma.censusRecord.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: payload.id } })
+      expect.objectContaining({
+        where: { id: payload.id },
+        include: {
+          createdBy: { select: { id: true, nickname: true } },
+          updatedBy: { select: { id: true, nickname: true } },
+        },
+      })
     );
     expect(mockPrisma.censusRecord.update.mock.calls[0][0].data).toEqual(
       expect.objectContaining({

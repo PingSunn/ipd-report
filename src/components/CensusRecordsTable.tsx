@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -55,8 +56,10 @@ import {
   calculateOccupancyRate,
   exportCensusToCSV,
   formatThaiDate,
+  formatUpdatedAt,
   getTodayDateString,
 } from "../utils/censusUtils";
+import { getCensusAttributionDisplay } from "../utils/censusAttribution";
 
 interface CensusRecordsTableProps {
   records: CensusRecord[];
@@ -73,6 +76,21 @@ interface CensusRecordsTableProps {
 const shifts: Array<"all" | ShiftType> = ["all", "เช้า", "บ่าย", "ดึก"];
 const pageSize = 8;
 type DatePreset = "all" | "today" | "7d" | "30d" | "custom";
+function Attribution({ record }: { record: CensusRecord }) {
+  const attribution = getCensusAttributionDisplay(record);
+  return (
+    <div className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground">
+      <UserRound className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 leading-5">
+        <p className="truncate">
+          {attribution.primary}
+          {attribution.secondary && <> · {attribution.secondary}</>}
+        </p>
+        <p className="tabular-nums">แก้ไขล่าสุด {formatUpdatedAt(record.updatedAt)}</p>
+      </div>
+    </div>
+  );
+}
 
 export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
   records,
@@ -109,7 +127,7 @@ export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
           (!customDate || record.date === customDate));
       const matchesQuery =
         !normalized ||
-        `${record.id} ${record.date} ${formatThaiDate(record.date, true)} ${record.shift} ${SHIFT_META[record.shift].label} ${record.note}`
+        `${record.id} ${record.date} ${formatThaiDate(record.date, true)} ${record.shift} ${SHIFT_META[record.shift].label} ${record.note} ${record.createdBy?.displayName ?? ""} ${record.updatedBy?.displayName ?? ""}`
           .toLowerCase()
           .includes(normalized);
       return matchesShift && matchesDate && matchesQuery;
@@ -308,6 +326,11 @@ export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
                   </strong>
                 </span>
               </div>
+              {!compact && (
+                <div className="mt-4 border-t border-border pt-3">
+                  <Attribution record={record} />
+                </div>
+              )}
               <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
                 <Button
                   type="button"
@@ -396,6 +419,11 @@ export const CensusRecordsTable: React.FC<CensusRecordsTableProps> = ({
                       {SHIFT_META[record.shift].label} ·{" "}
                       {SHIFT_META[record.shift].timeRange}
                     </p>
+                    {!compact && (
+                      <div className="mt-2 max-w-72">
+                        <Attribution record={record} />
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <span className="font-mono text-base font-semibold tabular-nums">

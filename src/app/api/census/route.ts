@@ -14,6 +14,11 @@ export const dynamic = 'force-dynamic';
 
 const noStoreHeaders = { 'Cache-Control': 'no-store' };
 
+const attributionInclude = {
+  createdBy: { select: { id: true, nickname: true } },
+  updatedBy: { select: { id: true, nickname: true } },
+} as const;
+
 function jsonResponse(body: unknown, status = 200): NextResponse {
   return NextResponse.json(body, { status, headers: noStoreHeaders });
 }
@@ -79,6 +84,7 @@ export async function GET(): Promise<NextResponse> {
   try {
     const records = await prisma.censusRecord.findMany({
       orderBy: [{ date: 'desc' }, { updatedAt: 'desc' }],
+      include: attributionInclude,
     });
 
     return jsonResponse({
@@ -149,6 +155,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         const updated = await transaction.censusRecord.update({
           where: { id: existingById.id },
           data: { ...values, updatedById: actor.id },
+          include: attributionInclude,
         });
         await transaction.auditLog.create({
           data: {
@@ -180,6 +187,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         },
         create: { id: input.id, ...values, createdById: actor.id, updatedById: actor.id },
         update: { ...values, updatedById: actor.id },
+        include: attributionInclude,
       });
       await transaction.auditLog.create({
         data: {
