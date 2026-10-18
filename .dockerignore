@@ -15,3 +15,16 @@ README.md
 DESIGN.md
 PRODUCT.md
 CONTEXT.md
+
+# Backup output and recovery material must never enter an image build context.
+backups/
+backup-artifacts/
+*.backup
+*.dump
+*.dump.*
+*.sql.gz
+*.sql.zst
+*.age
+*.enc
+*.pem
+*.key

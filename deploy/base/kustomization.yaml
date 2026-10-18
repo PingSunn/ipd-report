@@ -7,6 +7,8 @@ resources:
   - deployment.yaml
   - worker-deployment.yaml
   - migration-job.yaml
+  - backup-cronjob.yaml
+  - backup-network-policy.yaml
   - infisical-secret.yaml
   - ingress.yaml
   - network-policy.yaml

@@ -14,6 +14,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://ipd:ci-password@127.0.0.1:5432/ipd_ci
       DIRECT_URL: postgresql://ipd:ci-password@127.0.0.1:5432/ipd_ci
+      LINE_TEST_DATABASE_URL: postgresql://ipd:ci-password@127.0.0.1:5432/ipd_ci
       BETTER_AUTH_SECRET: ci-build-secret-012345678901234567890123
       BETTER_AUTH_URL: http://localhost:40000
       BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:40000
@@ -41,8 +42,28 @@ jobs:
       - run: bun run db:generate
       - run: bun run db:deploy
       - run: bun run typecheck
+      - run: bunx tsc -p tsconfig.backup.json --noEmit
       - run: bun run test
       - run: bun run build
+      - name: Build backup image for verification
+        run: docker build --target backup --tag ipd-report-backup:ci .
+      - name: Smoke-test backup image hardening
+        shell: bash
+        run: |
+          test "$(docker image inspect ipd-report-backup:ci --format '{{.Config.User}}')" = "1000:1000"
+          set +e
+          output="$(docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev ipd-report-backup:ci 2>&1)"
+          status="$?"
+          set -e
+          test "$status" -ne 0
+          grep -F 'BACKUP_ENCRYPTION_KEY is required' <<< "$output"
+      - name: Validate backup alert rules
+        run: >-
+          docker run --rm
+          -v "${{ github.workspace }}/deploy/monitoring:/rules:ro"
+          --entrypoint promtool
+          prom/prometheus:v3.8.0
+          test rules /rules/backup-promtool.test.yml
 
   publish:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -55,6 +76,7 @@ jobs:
       REGISTRY: ghcr.io
       APP_IMAGE: ghcr.io/pingsunn/ipd-report
       OPS_IMAGE: ghcr.io/pingsunn/ipd-report-ops
+      BACKUP_IMAGE: ghcr.io/pingsunn/ipd-report-backup
       IMAGE_TAG: sha-${{ github.sha }}
       NEXT_PUBLIC_APP_URL: https://ipd.pskwr.com
     steps:
@@ -96,16 +118,28 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=ipd-report-ops
           cache-to: type=gha,mode=max,scope=ipd-report-ops
+      - name: Build and push backup image
+        id: backup
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: backup
+          push: true
+          tags: ${{ env.BACKUP_IMAGE }}:${{ env.IMAGE_TAG }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=ipd-report-backup
+          cache-to: type=gha,mode=max,scope=ipd-report-backup
       - name: Record image references and digests
         env:
           APP_DIGEST: ${{ steps.app.outputs.digest }}
           OPS_DIGEST: ${{ steps.ops.outputs.digest }}
+          BACKUP_DIGEST: ${{ steps.backup.outputs.digest }}
         run: |
           {
             echo '## Published images'
             echo
-            echo "- Application: `${APP_IMAGE}:${IMAGE_TAG}`"
-            echo "  - Digest: `${APP_DIGEST}`"
-            echo "- Operations: `${OPS_IMAGE}:${IMAGE_TAG}`"
-            echo "  - Digest: `${OPS_DIGEST}`"
+            printf -- '- Application: `%s:%s`\n  - Digest: `%s`\n' "$APP_IMAGE" "$IMAGE_TAG" "$APP_DIGEST"
+            printf -- '- Operations: `%s:%s`\n  - Digest: `%s`\n' "$OPS_IMAGE" "$IMAGE_TAG" "$OPS_DIGEST"
+            printf -- '- Backup: `%s:%s`\n  - Digest: `%s`\n' "$BACKUP_IMAGE" "$IMAGE_TAG" "$BACKUP_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"

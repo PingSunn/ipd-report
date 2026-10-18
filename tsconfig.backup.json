@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": [],
+    "types": ["node"]
+  },
+  "include": [
+    "scripts/backup/**/*.ts",
+    "scripts/db/provision-backup-role.ts",
+    "tests/backup*.test.ts"
+  ],
+  "exclude": ["node_modules"]
+}
