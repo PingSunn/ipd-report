@@ -15,6 +15,9 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:provision-runtime-role": "bun scripts/db/provision-runtime-role.ts",
+    "db:provision-backup-role": "bun scripts/db/provision-backup-role.ts",
+    "db:backup": "bun scripts/backup/run.ts",
+    "db:restore-check": "bun scripts/backup/restore.ts",
     "db:seed:mock": "bun scripts/seed-mock-census.ts",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
@@ -24,6 +27,8 @@
     "line:webhook-proxy": "bun scripts/line-webhook-proxy.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1016.0",
+    "@aws-sdk/lib-storage": "3.1016.0",
     "@daypicker/buddhist": "^10.0.2",
     "@fontsource/noto-sans-thai": "^5.3.0",
     "@prisma/adapter-pg": "7.10.1",

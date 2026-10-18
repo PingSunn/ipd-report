@@ -1,0 +1,58 @@
+# Prometheus-native mirror used by promtool tests. Keep this expression set
+# synchronized with backup-prometheusrule.yaml, whose Kubernetes wrapper is
+# consumed by the Prometheus Operator.
+groups:
+  - name: ipd-report-backup
+    rules:
+      - alert: IpdReportBackupFailed
+        expr: >-
+          (
+            kube_job_failed{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+",condition="true"} == 1
+            and on (namespace, job_name)
+            (
+              kube_job_created{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+"}
+              > on (namespace) group_left()
+              (
+                max by (namespace) (
+                  kube_job_status_completion_time{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+"}
+                  * on (namespace, job_name)
+                  kube_job_status_succeeded{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+"}
+                )
+                or on (namespace)
+                max by (namespace) (
+                  kube_cronjob_created{namespace="ipd-report",cronjob="ipd-report-backup"} * 0
+                )
+              )
+            )
+          )
+          and on (namespace)
+          kube_cronjob_spec_suspend{namespace="ipd-report",cronjob="ipd-report-backup"} == 0
+        for: 15m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: IPD database backup failed
+          description: The ipd-report-backup CronJob has a failed Job.
+      - alert: IpdReportBackupStale
+        expr: >-
+          time() - (
+            max by (namespace) (
+              kube_job_status_completion_time{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+"}
+              * on (namespace, job_name)
+              kube_job_status_succeeded{namespace="ipd-report",job_name=~"ipd-report-backup-[0-9]+"}
+            )
+            or on (namespace)
+            max by (namespace) (
+              kube_cronjob_created{namespace="ipd-report",cronjob="ipd-report-backup"}
+            )
+          ) > 26 * 60 * 60
+          and on (namespace)
+          kube_cronjob_spec_suspend{namespace="ipd-report",cronjob="ipd-report-backup"} == 0
+        for: 30m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: IPD database backup is stale
+          description: No successful IPD backup has completed in more than 26 hours.

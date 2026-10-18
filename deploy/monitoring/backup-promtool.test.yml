@@ -1,0 +1,65 @@
+rule_files:
+  - backup-promtool.rules.yaml
+evaluation_interval: 1h
+tests:
+  - name: failed backup without a successful job fires
+    interval: 1m
+    input_series:
+      - series: kube_cronjob_spec_suspend{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x120
+      - series: kube_cronjob_created{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x120
+      - series: kube_job_failed{namespace="ipd-report",job_name="ipd-report-backup-100",condition="true"}
+        values: 1+0x120
+      - series: kube_job_created{namespace="ipd-report",job_name="ipd-report-backup-100"}
+        values: 7200+0x120
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: IpdReportBackupFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: backup
+              namespace: ipd-report
+              job_name: ipd-report-backup-100
+              condition: "true"
+            exp_annotations:
+              summary: IPD database backup failed
+              description: The ipd-report-backup CronJob has a failed Job.
+  - name: successful backup suppresses an older failed job
+    interval: 1h
+    input_series:
+      - series: kube_cronjob_spec_suspend{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x8
+      - series: kube_cronjob_created{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x8
+      - series: kube_job_failed{namespace="ipd-report",job_name="ipd-report-backup-100",condition="true"}
+        values: 1+0x8
+      - series: kube_job_created{namespace="ipd-report",job_name="ipd-report-backup-100"}
+        values: 7200+0x8
+      - series: kube_job_status_succeeded{namespace="ipd-report",job_name="ipd-report-backup-200"}
+        values: 1+0x8
+      - series: kube_job_status_completion_time{namespace="ipd-report",job_name="ipd-report-backup-200"}
+        values: 10800+0x8
+    alert_rule_test:
+      - eval_time: 4h
+        alertname: IpdReportBackupFailed
+        exp_alerts: []
+  - name: stale fallback uses CronJob creation when no success exists
+    interval: 1h
+    input_series:
+      - series: kube_cronjob_spec_suspend{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x30
+      - series: kube_cronjob_created{namespace="ipd-report",cronjob="ipd-report-backup"}
+        values: 0+0x30
+    alert_rule_test:
+      - eval_time: 28h
+        alertname: IpdReportBackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: backup
+              namespace: ipd-report
+            exp_annotations:
+              summary: IPD database backup is stale
+              description: No successful IPD backup has completed in more than 26 hours.

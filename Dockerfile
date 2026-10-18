@@ -42,3 +42,25 @@ COPY --from=builder --chown=bun:bun /app/.next/static ./.next/static
 USER bun
 EXPOSE 40000
 CMD ["bun", "server.js"]
+
+# The backup image deliberately uses the PostgreSQL distribution image so that
+# pg_dump and restore verification use a known PostgreSQL 18 client. Bun is
+# copied from the already pinned runtime image; the backup job does not need
+# the application, Prisma client, or migration artifacts.
+FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS backup-bun
+
+FROM postgres:18-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c AS backup
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=backup-bun /usr/local/bin/bun /usr/local/bin/bun
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin app \
+    && pg_dump --version
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY --chown=1000:1000 scripts/backup ./scripts/backup
+USER 1000:1000
+ENTRYPOINT ["bun", "scripts/backup/run.ts"]

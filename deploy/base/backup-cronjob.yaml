@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ipd-report-backup
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Asia/Bangkok
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ipd-report-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: ghcr.io/pingsunn/ipd-report-backup@sha256:REPLACE_WITH_BACKUP_DIGEST
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: BACKUP_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_DATABASE_URL
+                - name: BACKUP_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_ENCRYPTION_KEY
+                - name: BACKUP_DATABASE_CA_CERT
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_DATABASE_CA_CERT
+                      optional: true
+                - name: BACKUP_RETENTION_DAYS
+                  value: "14"
+                - name: BACKUP_S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_ENDPOINT
+                - name: BACKUP_S3_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_REGION
+                - name: BACKUP_S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_BUCKET
+                - name: BACKUP_S3_PREFIX
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_PREFIX
+                - name: BACKUP_S3_FORCE_PATH_STYLE
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_FORCE_PATH_STYLE
+                - name: BACKUP_S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_ACCESS_KEY_ID
+                - name: BACKUP_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ipd-report-env
+                      key: BACKUP_S3_SECRET_ACCESS_KEY
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                  ephemeral-storage: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                  ephemeral-storage: 2Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 2Gi

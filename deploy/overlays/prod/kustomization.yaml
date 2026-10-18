@@ -3,5 +3,6 @@ kind: Kustomization
 namespace: ipd-report
 resources:
   - ../../base
+  - ../../monitoring
 patches:
   - path: deployment-patch.yaml

@@ -1,7 +1,7 @@
 # Production deployment
 
 Production runs from GitHub Actions and Argo CD on the home k3s cluster. The
-application image and the operations image are published as multi architecture
+application, operations, and backup images are published as multi architecture
 GHCR packages for `linux/amd64` and `linux/arm64`. The operations image runs
 Prisma migrations in the Argo PreSync Job and the scheduled LINE worker in a
 single replica.
@@ -43,8 +43,9 @@ the migration Job consumes only `DIRECT_URL`.
 
    - `ghcr.io/pingsunn/ipd-report:sha-<commit>`
    - `ghcr.io/pingsunn/ipd-report-ops:sha-<commit>`
+   - `ghcr.io/pingsunn/ipd-report-backup:sha-<commit>`
 
-   Record the multi architecture digests from the workflow summary. Set both
+   Record the multi architecture digests from the workflow summary. Set all three
    GHCR packages to Public before the cluster rollout if the cluster has no
    image pull secret for GHCR.
 3. Before the first runtime-role cutover, apply migrations with `DIRECT_URL`,
@@ -73,6 +74,22 @@ filesystem with a memory-backed `/tmp`. Service-account token automounting is
 disabled. The NetworkPolicies allow cluster DNS plus TCP 443 for Google/LINE
 and TCP 5432/6543 for Supabase direct and transaction-pooler connections;
 update the egress CIDRs if a stable provider range becomes available.
+
+## Database backup workload
+
+The application also owns a separate encrypted public-schema backup workload.
+Its dedicated `backup` Docker target is published as
+`ghcr.io/pingsunn/ipd-report-backup:sha-<commit>` for both supported architectures.
+Set its immutable digest alongside the web and operations image digests in
+GitOps. It does not run on the NAS or inside the web/LINE worker processes.
+
+The CronJob is deliberately suspended initially. It uses only the backup-specific
+Infisical keys, not migration `DIRECT_URL`, runtime `DATABASE_URL`, Google, or
+LINE credentials. Its schedule is 03:00 Asia/Bangkok with a 14-day retention
+window. Complete the isolated restore check and reviewed rollout before
+unsuspending it. See [Database backup and recovery](backup.md) for the exact
+scope, required secrets, role provisioning, recovery procedure, and monitoring
+limitations. An encryption key must remain recoverable independently of the NAS.
 
 ## Checks
 
