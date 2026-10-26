@@ -9,9 +9,20 @@ spec:
   tls:
     - hosts:
         - ipd.pskwr.com
+        - ipd.pingsunn.com
       secretName: ipd-report-tls
   rules:
     - host: ipd.pskwr.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ipd-report
+                port:
+                  name: http
+    - host: ipd.pingsunn.com
       http:
         paths:
           - path: /

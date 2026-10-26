@@ -11,6 +11,6 @@ spec:
             - name: BETTER_AUTH_URL
               value: https://ipd.pskwr.com
             - name: BETTER_AUTH_TRUSTED_ORIGINS
-              value: https://ipd.pskwr.com
+              value: https://ipd.pskwr.com,https://ipd.pingsunn.com
             - name: LINE_CHANNEL_ACCESS_TOKEN_CONFIGURED
               value: "true"
