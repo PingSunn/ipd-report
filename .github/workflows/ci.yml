@@ -78,7 +78,7 @@ jobs:
       OPS_IMAGE: ghcr.io/pingsunn/ipd-report-ops
       BACKUP_IMAGE: ghcr.io/pingsunn/ipd-report-backup
       IMAGE_TAG: sha-${{ github.sha }}
-      NEXT_PUBLIC_APP_URL: https://ipd.pskwr.com
+      NEXT_PUBLIC_APP_URL: https://ipd.pingsunn.com
     steps:
       - name: Check out verified source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
