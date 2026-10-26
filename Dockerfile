@@ -6,7 +6,7 @@ RUN bun install --frozen-lockfile
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-ARG NEXT_PUBLIC_APP_URL=https://ipd.pskwr.com
+ARG NEXT_PUBLIC_APP_URL=https://ipd.pingsunn.com
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 # Prisma's config validates DIRECT_URL during generate and the Next.js build
