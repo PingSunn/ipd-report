@@ -45,6 +45,7 @@ import {
   formatThaiDate,
   formatUpdatedAt,
   getTodayDateString,
+  resolveEditingRecord,
 } from "./utils/censusUtils";
 import type { SharedReportSettings } from "./utils/censusUtils";
 
@@ -199,7 +200,9 @@ export default function App() {
     const requested = records.find((record) => record.id === requestedRecordId);
     if (!requested) return;
     setSelectedRecord(requested);
-    if (activeTab === "entry") setEditingRecord(requested);
+    if (activeTab === "entry") {
+      setEditingRecord((current) => resolveEditingRecord(current, requested));
+    }
   }, [activeTab, records, requestedRecordId]);
 
   const activeLineRecord = selectedRecord || records[0] || null;
