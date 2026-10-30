@@ -108,6 +108,17 @@ export function getLatestModifiedRecord(records: CensusRecord[]): CensusRecord |
 }
 
 /**
+ * Keep the record already open in the entry form across background refreshes,
+ * so a fresh copy of the same record does not reset the user's unsaved edits.
+ */
+export function resolveEditingRecord(
+  current: CensusRecord | null,
+  requested: CensusRecord
+): CensusRecord {
+  return current?.id === requested.id ? current : requested;
+}
+
+/**
  * Calculate Occupancy Rate (%)
  */
 export function calculateOccupancyRate(totalPatients: number, capacity: number): number {
